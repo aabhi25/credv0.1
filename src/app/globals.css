@@ -16,6 +16,58 @@
 
   --color-gold-400: #d4b26a;
   --color-gold-500: #c19a48;
+
+  --animate-nav-in: nav-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-indicator-in: indicator-in 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-drawer-in: drawer-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-glow-drift: glow-drift 14s ease-in-out infinite alternate;
+  --animate-fade-in: fade-in 0.2s ease-out both;
+}
+
+@keyframes nav-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
+
+@keyframes indicator-in {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes glow-drift {
+  from {
+    transform: translate(-20%, -10%) scale(1);
+    opacity: 0.55;
+  }
+  to {
+    transform: translate(25%, 15%) scale(1.15);
+    opacity: 0.85;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 body {
