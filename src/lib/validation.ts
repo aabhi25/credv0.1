@@ -58,7 +58,6 @@ export const programSchema = z
     category: z.string().trim().min(2, "Category is required").max(60),
     description: z.string().trim().max(300).default(""),
     bureau: z.enum(["EQUIFAX", "CIBIL", "CRIF", "EXPERIAN"]),
-    apiMode: z.enum(["MOCK", "LIVE"]),
     minScore: z.coerce.number().int().min(300).max(900),
     maxDtiPct: z.coerce.number().int().min(0).max(100),
     maxDefaults: z.coerce.number().int().min(0).max(10),

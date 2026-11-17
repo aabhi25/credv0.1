@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { runEligibilityCheck } from "@/lib/eligibility";
+import { programAvailability, runEligibilityCheck } from "@/lib/eligibility";
 import { applicantSchema, programSchema } from "@/lib/validation";
 
 export type ProgramFormState = { errors?: Record<string, string>; saved?: boolean };
@@ -58,6 +58,8 @@ export async function runBulkCheck(programId: string, rows: BulkRow[]): Promise<
 
   const program = await db.program.findFirst({ where: { id: programId, organizationId } });
   if (!program) return { results: [], error: "Program not found" };
+  const availability = await programAvailability(program);
+  if (!availability.ok) return { results: [], error: `Can't run checks: ${availability.reason}.` };
 
   const results: BulkResult[] = new Array(rows.length);
   let next = 0;

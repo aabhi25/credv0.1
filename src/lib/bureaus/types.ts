@@ -1,9 +1,6 @@
 export const BUREAUS = ["EQUIFAX", "CIBIL", "CRIF", "EXPERIAN"] as const;
 export type BureauCode = (typeof BUREAUS)[number];
 
-export const API_MODES = ["MOCK", "LIVE"] as const;
-export type ApiMode = (typeof API_MODES)[number];
-
 export const BUREAU_LABELS: Record<BureauCode, string> = {
   EQUIFAX: "Equifax",
   CIBIL: "TransUnion CIBIL",
@@ -31,3 +28,16 @@ export interface BureauAdapter {
 }
 
 export class BureauError extends Error {}
+
+/**
+ * NOT_INTEGRATED: no adapter has been built for this bureau yet.
+ * NEEDS_CREDENTIALS: adapter exists but the API credentials are not set.
+ * READY: checks can call the bureau.
+ */
+export type BureauStatus = "NOT_INTEGRATED" | "NEEDS_CREDENTIALS" | "READY";
+
+export const BUREAU_STATUS_LABELS: Record<BureauStatus, string> = {
+  NOT_INTEGRATED: "Not integrated",
+  NEEDS_CREDENTIALS: "Credentials missing",
+  READY: "Live",
+};

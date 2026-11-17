@@ -56,7 +56,6 @@ model Program {
   category      String // e.g. Education, Consumer Brands
   description   String   @default("")
   bureau        String   @default("EQUIFAX")
-  apiMode       String   @default("MOCK") // MOCK | LIVE
   minScore      Int      @default(650)
   maxDtiPct     Int      @default(40)
   maxDefaults   Int      @default(0)
@@ -81,7 +80,6 @@ model EligibilityCheck {
   panHash       String // SHA-256, lets admins spot repeat checks
   age           Int
   bureau        String
-  apiMode       String
   score         Int?
   dtiPct        Int?
   defaults      Int?

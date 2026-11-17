@@ -113,7 +113,7 @@ export default async function ApplicantsPage({ searchParams }: { searchParams: S
                     <td className="px-4 py-3">
                       <div className="text-slate-800">{c.program.name}</div>
                       <div className="text-xs text-slate-500">
-                        {c.bureau} · {c.apiMode} · {c.source === "BULK" ? "Bulk" : "Link"}
+                        {c.bureau} · {c.source === "BULK" ? "Bulk" : "Link"}
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums">{c.score ?? "—"}</td>

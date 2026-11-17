@@ -2,9 +2,9 @@
 
 import { useActionState, useState } from "react";
 import type { Program } from "@prisma/client";
-import { Check } from "lucide-react";
-import { Button, Field, inputClass } from "@/components/ui";
-import { BUREAU_LABELS, BUREAUS } from "@/lib/bureaus/types";
+import { AlertTriangle, Check } from "lucide-react";
+import { BureauStatusBadge, Button, Field, inputClass } from "@/components/ui";
+import { BUREAU_LABELS, BUREAU_STATUS_LABELS, BUREAUS, type BureauCode, type BureauStatus } from "@/lib/bureaus/types";
 import { saveProgram, type ProgramFormState } from "./actions";
 
 const defaults = {
@@ -13,7 +13,6 @@ const defaults = {
   category: "",
   description: "",
   bureau: "EQUIFAX",
-  apiMode: "MOCK",
   minScore: 650,
   maxDtiPct: 40,
   maxDefaults: 0,
@@ -27,7 +26,7 @@ function slugify(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
-export function ProgramForm({ program, liveReady }: { program?: Program; liveReady: Record<string, boolean> }) {
+export function ProgramForm({ program, bureauStatus }: { program?: Program; bureauStatus: Record<BureauCode, BureauStatus> }) {
   const initial = program ?? defaults;
   const [state, action, pending] = useActionState<ProgramFormState, FormData>(
     saveProgram.bind(null, program?.id ?? null),
@@ -36,7 +35,6 @@ export function ProgramForm({ program, liveReady }: { program?: Program; liveRea
   const [slugTouched, setSlugTouched] = useState(Boolean(program));
   const [slug, setSlug] = useState(initial.slug);
   const [bureau, setBureau] = useState(initial.bureau);
-  const [apiMode, setApiMode] = useState(initial.apiMode);
   const [minScore, setMinScore] = useState(initial.minScore);
   const [maxDtiPct, setMaxDtiPct] = useState(initial.maxDtiPct);
   const [maxDefaults, setMaxDefaults] = useState(initial.maxDefaults);
@@ -81,36 +79,30 @@ export function ProgramForm({ program, liveReady }: { program?: Program; liveRea
               {BUREAUS.map((b) => (
                 <option key={b} value={b}>
                   {BUREAU_LABELS[b]}
+                  {bureauStatus[b] !== "READY" ? ` (${BUREAU_STATUS_LABELS[bureauStatus[b]].toLowerCase()})` : ""}
                 </option>
               ))}
             </select>
           </Field>
           <div>
-            <span className="mb-1.5 block text-sm font-medium text-slate-700">API mode</span>
-            <input type="hidden" name="apiMode" value={apiMode} />
-            <div className="inline-flex rounded-lg border border-slate-300 p-1">
-              {(["MOCK", "LIVE"] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setApiMode(m)}
-                  className={`rounded-md px-5 py-1.5 text-sm font-semibold ${
-                    apiMode === m ? "bg-navy-900 text-white" : "text-slate-600 hover:text-navy-900"
-                  }`}
-                >
-                  {m}
-                </button>
-              ))}
+            <span className="mb-1 block text-[13px] font-medium text-slate-700">Status</span>
+            <div className="py-2">
+              <BureauStatusBadge status={bureauStatus[bureau as BureauCode]} />
             </div>
-            <p className={`mt-1.5 text-xs ${apiMode === "LIVE" && !liveReady[bureau] ? "text-amber-700" : "text-slate-500"}`}>
-              {apiMode === "MOCK"
-                ? "Simulated reports, safe for testing"
-                : liveReady[bureau]
-                  ? "Live bureau pull"
-                  : "Live credentials for this bureau are not configured, so checks will error"}
-            </p>
           </div>
         </div>
+        {bureauStatus[bureau as BureauCode] !== "READY" && (
+          <div className="mt-4 flex gap-2.5 rounded-lg bg-amber-50 px-3.5 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <p>
+              {bureauStatus[bureau as BureauCode] === "NOT_INTEGRATED"
+                ? `${BUREAU_LABELS[bureau as BureauCode]} is not integrated yet.`
+                : `${BUREAU_LABELS[bureau as BureauCode]} API credentials are not configured.`}{" "}
+              You can save this program, but no eligibility checks will run and applicants will see &ldquo;Not
+              available yet&rdquo; on its link.
+            </p>
+          </div>
+        )}
       </section>
 
       <section className="rounded-xl border border-slate-200 p-5">

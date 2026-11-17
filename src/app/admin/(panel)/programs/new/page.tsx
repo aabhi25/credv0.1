@@ -1,12 +1,11 @@
 import Link from "next/link";
 import { Card } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
-import { BUREAUS, liveCredentials } from "@/lib/bureaus";
+import { allBureauStatuses } from "@/lib/bureaus";
 import { ProgramForm } from "../ProgramForm";
 
 export default async function NewProgramPage() {
   await requireAdmin();
-  const liveReady = Object.fromEntries(BUREAUS.map((b) => [b, Boolean(liveCredentials(b))]));
   return (
     <div className="space-y-6">
       <div>
@@ -17,7 +16,7 @@ export default async function NewProgramPage() {
         <p className="mt-1 text-sm text-slate-500">Set up a rule engine and get a shareable eligibility link.</p>
       </div>
       <Card className="p-5">
-        <ProgramForm liveReady={liveReady} />
+        <ProgramForm bureauStatus={allBureauStatuses()} />
       </Card>
     </div>
   );

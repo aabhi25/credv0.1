@@ -2,7 +2,7 @@
 
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
-import { runEligibilityCheck } from "@/lib/eligibility";
+import { programAvailability, runEligibilityCheck } from "@/lib/eligibility";
 import { rateLimit } from "@/lib/rate-limit";
 import { applicantSchema } from "@/lib/validation";
 
@@ -37,6 +37,9 @@ export async function checkEligibility(slug: string, _prev: CheckState, formData
   const program = await db.program.findUnique({ where: { slug }, include: { organization: { select: { active: true } } } });
   if (!program || !program.active || !program.organization.active) {
     return { kind: "unavailable", message: "This eligibility link is no longer active." };
+  }
+  if (!(await programAvailability(program)).ok) {
+    return { kind: "unavailable", message: "Eligibility checks for this offer aren't available yet. Please try again later." };
   }
 
   const outcome = await runEligibilityCheck(program, parsed.data, "LINK");

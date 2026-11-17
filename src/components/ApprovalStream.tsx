@@ -37,7 +37,7 @@ export function ApprovalStream({ checks, showProgram = true }: { checks: Row[]; 
             <div className="shrink-0 text-right">
               <StatusBadge status={c.status} />
               <div className="mt-1 text-[11px] text-slate-400">
-                {c.bureau} · {c.apiMode} · {formatDateTime(c.createdAt)}
+                {c.bureau} · {formatDateTime(c.createdAt)}
               </div>
             </div>
           </li>

@@ -1,10 +1,12 @@
 import Link from "next/link";
+import { AlertTriangle } from "lucide-react";
 import { notFound } from "next/navigation";
 import { ApprovalStream } from "@/components/ApprovalStream";
 import { CopyLink } from "@/components/CopyLink";
 import { Card, CardHeader } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
-import { BUREAUS, liveCredentials } from "@/lib/bureaus";
+import { allBureauStatuses } from "@/lib/bureaus";
+import { programAvailability } from "@/lib/eligibility";
 import { db } from "@/lib/db";
 import { getBaseUrl } from "@/lib/url";
 import { ProgramForm } from "../ProgramForm";
@@ -27,7 +29,8 @@ export default async function ProgramPage({ params }: { params: Promise<{ id: st
     getBaseUrl(),
   ]);
   if (!program) notFound();
-  const liveReady = Object.fromEntries(BUREAUS.map((b) => [b, Boolean(liveCredentials(b))]));
+  const availability = await programAvailability(program);
+  const blockedReason = availability.ok ? null : availability.reason;
 
   return (
     <div className="space-y-6">
@@ -47,6 +50,16 @@ export default async function ProgramPage({ params }: { params: Promise<{ id: st
         </Link>
       </div>
 
+      {blockedReason && (
+        <div className="flex gap-2.5 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <p>
+            <span className="font-medium">Checks can&apos;t run on this program: {blockedReason}.</span> Applicants opening the link see
+            &ldquo;Not available yet&rdquo;, and bulk checks are disabled.
+          </p>
+        </div>
+      )}
+
       <Card className="p-5">
         <p className="mb-2 text-sm font-medium text-slate-700">Shareable eligibility link</p>
         <CopyLink url={`${baseUrl}/check/${program.slug}`} />
@@ -57,14 +70,14 @@ export default async function ProgramPage({ params }: { params: Promise<{ id: st
         <Card className="lg:col-span-3">
           <CardHeader title="Rule engine" subtitle="Criteria applied to every check on this program" />
           <div className="p-5">
-            <ProgramForm program={program} liveReady={liveReady} />
+            <ProgramForm program={program} bureauStatus={allBureauStatuses()} />
           </div>
         </Card>
         <div className="space-y-6 lg:col-span-2">
           <Card>
             <CardHeader title="Bulk eligibility upload" subtitle="Check a list of applicants against this program" />
             <div className="p-5">
-              <BulkUpload programId={program.id} />
+              <BulkUpload programId={program.id} blockedReason={blockedReason} />
             </div>
           </Card>
         </div>

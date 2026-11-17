@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { Activity, IndianRupee, Timer, TrendingUp } from "lucide-react";
+import { Activity, AlertTriangle, IndianRupee, Timer, TrendingUp } from "lucide-react";
 import { ApprovalStream } from "@/components/ApprovalStream";
 import { StatCard } from "@/components/StatCard";
-import { Card, CardHeader, PageIntro, Pill } from "@/components/ui";
+import { BureauStatusBadge, Card, CardHeader, PageIntro, Pill } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
+import { allBureauStatuses, type BureauCode } from "@/lib/bureaus";
 import { db } from "@/lib/db";
 import { formatInrCompact } from "@/lib/format";
 
@@ -21,6 +22,8 @@ export default async function Dashboard() {
     db.eligibilityCheck.findMany({ where: scope, orderBy: { createdAt: "desc" }, take: 10, include: { program: { select: { name: true } } } }),
   ]);
 
+  const statuses = allBureauStatuses();
+  const blocked = programs.filter((p) => p.active && statuses[p.bureau as BureauCode] !== "READY");
   const total = totals._count;
   const conversion = total ? Math.round((approved._count / total) * 100) : 0;
   const countFor = (programId: string, status?: string) =>
@@ -31,6 +34,21 @@ export default async function Dashboard() {
   return (
     <div className="space-y-6">
       <PageIntro>Eligibility activity across all programs.</PageIntro>
+
+      {blocked.length > 0 && (
+        <div className="flex gap-2.5 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <p>
+            <span className="font-medium">
+              {blocked.length} of {programs.length} program(s) can&apos;t run eligibility checks
+            </span>{" "}
+            because their credit bureau isn&apos;t live yet. Their links show applicants &ldquo;Not available yet&rdquo;.{" "}
+            <Link href="/admin/bureaus" className="font-medium underline underline-offset-2">
+              See bureau status
+            </Link>
+          </p>
+        </div>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Total checks" value={String(total)} hint="Across all links and bulk uploads" icon={Activity} />
@@ -83,9 +101,10 @@ export default async function Dashboard() {
                       <div className="text-xs text-slate-500">{p.category}</div>
                     </td>
                     <td className="px-5 py-3">
-                      <Pill>
-                        {p.bureau} · {p.apiMode}
-                      </Pill>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Pill>{p.bureau}</Pill>
+                        <BureauStatusBadge status={statuses[p.bureau as BureauCode]} />
+                      </div>
                     </td>
                     <td className="px-5 py-3 text-right tabular-nums">{checks}</td>
                     <td className="px-5 py-3 text-right tabular-nums">{eligible}</td>

@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ActiveBadge, Card, CardHeader, Pill } from "@/components/ui";
+import { ActiveBadge, BureauStatusBadge, Card, CardHeader, Pill } from "@/components/ui";
 import { requireSuperadmin } from "@/lib/auth";
+import { getBureauStatus, type BureauCode } from "@/lib/bureaus";
 import { db } from "@/lib/db";
 import { getBaseUrl } from "@/lib/url";
 import { CreateUserForm, OrganizationStatusButton, RenameOrganizationForm, UserRow } from "../../forms";
@@ -85,9 +86,8 @@ export default async function OrganizationPage({ params }: { params: Promise<{ i
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Pill>
-                    {p.bureau} · {p.apiMode}
-                  </Pill>
+                  <Pill>{p.bureau}</Pill>
+                  <BureauStatusBadge status={getBureauStatus(p.bureau as BureauCode)} />
                   <span className="text-xs tabular-nums text-slate-500">{p._count.checks} checks</span>
                   {!p.active && <span className="text-xs text-amber-700">Paused</span>}
                 </div>

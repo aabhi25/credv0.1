@@ -1,9 +1,29 @@
 import { createHash } from "node:crypto";
 import type { Program } from "@prisma/client";
-import { BureauError, getBureauAdapter, type ApiMode, type BureauCode } from "./bureaus";
+import { BUREAU_LABELS, BureauError, getBureauAdapter, getBureauStatus, type BureauCode } from "./bureaus";
 import { db } from "./db";
 import { evaluate } from "./rules";
 import { ageFrom, maskPan, parseDob, type ApplicantInput } from "./validation";
+
+export type Availability = { ok: true } | { ok: false; reason: string };
+
+/**
+ * Whether a program can run checks right now. The public page uses this to show applicants
+ * "not available" up front instead of letting them submit a check that can't run.
+ */
+export async function programAvailability(program: Program): Promise<Availability> {
+  const bureau = program.bureau as BureauCode;
+  const label = BUREAU_LABELS[bureau] ?? bureau;
+  if (!program.active) return { ok: false, reason: "This program's link is paused" };
+  const setting = await db.bureauSetting.findUnique({
+    where: { organizationId_bureau: { organizationId: program.organizationId, bureau } },
+  });
+  if (setting && !setting.enabled) return { ok: false, reason: `${label} is turned off for your organization` };
+  const status = getBureauStatus(bureau);
+  if (status === "NOT_INTEGRATED") return { ok: false, reason: `${label} is not integrated yet` };
+  if (status === "NEEDS_CREDENTIALS") return { ok: false, reason: `${label} API credentials are not configured` };
+  return { ok: true };
+}
 
 export type CheckOutcome = {
   id: string;
@@ -21,11 +41,6 @@ export async function runEligibilityCheck(
   const dob = parseDob(input.dob)!;
   const age = ageFrom(dob);
   const bureau = program.bureau as BureauCode;
-  const apiMode = program.apiMode as ApiMode;
-
-  const bureauSetting = await db.bureauSetting.findUnique({
-    where: { organizationId_bureau: { organizationId: program.organizationId, bureau } },
-  });
   const started = Date.now();
   let status: CheckOutcome["status"];
   let reasons: string[];
@@ -33,8 +48,9 @@ export async function runEligibilityCheck(
   let report: { score: number; dtiPct: number; defaults: number } | null = null;
 
   try {
-    if (bureauSetting && !bureauSetting.enabled) throw new BureauError(`${bureau} is disabled`);
-    report = await getBureauAdapter(bureau, apiMode).fetchReport({ ...input, dob });
+    const availability = await programAvailability(program);
+    if (!availability.ok) throw new BureauError(availability.reason);
+    report = await getBureauAdapter(bureau).fetchReport({ ...input, dob });
     const result = evaluate(program, report, age);
     status = result.approved ? "APPROVED" : "DECLINED";
     reasons = result.reasons;
@@ -54,7 +70,6 @@ export async function runEligibilityCheck(
       panHash: createHash("sha256").update(input.pan).digest("hex"),
       age,
       bureau,
-      apiMode,
       score: report?.score,
       dtiPct: report?.dtiPct,
       defaults: report?.defaults,

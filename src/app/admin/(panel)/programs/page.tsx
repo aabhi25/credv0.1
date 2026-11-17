@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import { CopyLink } from "@/components/CopyLink";
-import { ActiveBadge, Card, PageIntro, Pill, primaryLinkClass } from "@/components/ui";
+import { ActiveBadge, BureauStatusBadge, Card, PageIntro, Pill, primaryLinkClass } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
-import { BUREAU_LABELS, type BureauCode } from "@/lib/bureaus";
+import { allBureauStatuses, BUREAU_LABELS, type BureauCode } from "@/lib/bureaus";
 import { db } from "@/lib/db";
 import { formatInr } from "@/lib/format";
 import { getBaseUrl } from "@/lib/url";
@@ -16,6 +16,7 @@ export default async function ProgramsPage() {
     db.program.findMany({ where: { organizationId }, orderBy: { createdAt: "asc" }, include: { _count: { select: { checks: true } } } }),
     getBaseUrl(),
   ]);
+  const statuses = allBureauStatuses();
 
   return (
     <div className="space-y-6">
@@ -43,7 +44,7 @@ export default async function ProgramsPage() {
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               <Pill>{BUREAU_LABELS[p.bureau as BureauCode] ?? p.bureau}</Pill>
-              <Pill>{p.apiMode}</Pill>
+              <BureauStatusBadge status={statuses[p.bureau as BureauCode]} />
             </div>
             <dl className="mt-5 grid grid-cols-3 gap-4 text-sm">
               <div>

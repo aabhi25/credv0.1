@@ -28,7 +28,6 @@ export async function GET(req: Request) {
       program: safe(c.program.name),
       category: safe(c.program.category),
       bureau: c.bureau,
-      api_mode: c.apiMode,
       source: c.source,
       score: c.score ?? "",
       dti_pct: c.dtiPct ?? "",

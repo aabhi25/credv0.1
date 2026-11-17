@@ -8,8 +8,9 @@ Instant pre-approved credit checks with configurable rule engines and pluggable 
 - **Programs (rule engines):** one per partner group, e.g. Education or Consumer Brands. Each has its own
   bureau, criteria (min score, max DTI, max defaults, age range, approved limit) and shareable link
   `/check/<slug>`.
-- **Bureaus:** Equifax, TransUnion CIBIL, CRIF High Mark and Experian behind one adapter interface, each in
-  MOCK or LIVE mode.
+- **Bureaus:** Equifax, TransUnion CIBIL, CRIF High Mark and Experian behind one adapter interface. Checks always
+  call the bureau live. **No bureau is integrated yet**, so no checks run and every eligibility link shows applicants
+  "Not available yet". The admin panel shows each bureau's status.
 - **Admin panel** (`/admin`), per organization: dashboard, programs, applicants (filter, search, CSV export), bulk CSV checks
   and bureau on/off switches.
 
@@ -39,15 +40,17 @@ superadmin panel, or `ADMIN_EMAIL` / `ADMIN_PASSWORD` for the demo organization.
 Applicant data: the full PAN is never stored. Only a masked form (`XXXXX1234F`) and a SHA-256 hash are kept,
 along with name, mobile, age and the result.
 
-## Going live with a bureau
+## Integrating a bureau
 
-MOCK mode returns repeatable simulated reports. To use a real bureau:
+There is no simulated or mock mode. Each bureau's status is one of:
 
-1. Set `<BUREAU>_API_URL` and `<BUREAU>_API_KEY` in `.env`.
-2. Implement that bureau's request and response mapping in `src/lib/bureaus/live.ts`.
-3. Switch the program's API mode to LIVE.
+- **Not integrated:** no adapter exists yet (all four today).
+- **Credentials missing:** the adapter exists but `<BUREAU>_API_URL` / `<BUREAU>_API_KEY` are not set.
+- **Live:** checks can run.
 
-Until step 2 is done, LIVE checks fail with a clear error rather than returning made-up data.
+To integrate a bureau, add an adapter for it to `INTEGRATIONS` in `src/lib/bureaus/index.ts` that calls the
+bureau's API and maps the response to a `BureauReport`, then set its credentials in `.env`. This needs bureau
+membership (usually through the NBFC) and the bureau's API documentation.
 
 ## Before production
 

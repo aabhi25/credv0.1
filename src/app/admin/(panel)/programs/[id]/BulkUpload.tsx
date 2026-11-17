@@ -8,7 +8,7 @@ import { runBulkCheck, type BulkResult, type BulkRow } from "../actions";
 
 const REQUIRED = ["name", "mobile", "pan", "dob"] as const;
 
-export function BulkUpload({ programId }: { programId: string }) {
+export function BulkUpload({ programId, blockedReason }: { programId: string; blockedReason: string | null }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [rows, setRows] = useState<BulkRow[]>([]);
@@ -90,7 +90,7 @@ export function BulkUpload({ programId }: { programId: string }) {
 
       {error && <p className="rounded-lg bg-rose-50 px-4 py-2.5 text-sm text-rose-700 ring-1 ring-rose-200">{error}</p>}
 
-      <Button onClick={run} disabled={pending || rows.length === 0} className="w-full">
+      <Button onClick={run} disabled={pending || rows.length === 0 || Boolean(blockedReason)} className="w-full">
         {pending ? (
           <>
             <Loader2 className="h-4 w-4 animate-spin" /> Checking {rows.length} applicant(s)…

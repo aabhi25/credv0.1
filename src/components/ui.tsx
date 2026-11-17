@@ -1,3 +1,4 @@
+import { BUREAU_STATUS_LABELS, type BureauStatus } from "@/lib/bureaus/types";
 import type { ComponentProps, ReactNode } from "react";
 
 export function Card({ className = "", ...props }: ComponentProps<"div">) {
@@ -119,5 +120,23 @@ export function Chip({ href, active, children }: { href: string; active: boolean
     >
       {children}
     </a>
+  );
+}
+
+const BUREAU_STATUS_STYLES: Record<BureauStatus, string> = {
+  NOT_INTEGRATED: "bg-amber-50 text-amber-800 ring-amber-600/20",
+  NEEDS_CREDENTIALS: "bg-amber-50 text-amber-800 ring-amber-600/20",
+  READY: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
+};
+
+/** Integration state of a credit bureau: "Not integrated", "Credentials missing" or "Live". */
+export function BureauStatusBadge({ status }: { status: BureauStatus }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${BUREAU_STATUS_STYLES[status]}`}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${status === "READY" ? "bg-emerald-500" : "bg-amber-500"}`} />
+      {BUREAU_STATUS_LABELS[status]}
+    </span>
   );
 }
