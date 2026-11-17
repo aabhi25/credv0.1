@@ -1,4 +1,4 @@
-import { Card, CardHeader } from "@/components/ui";
+import { Card, CardHeader, PageIntro } from "@/components/ui";
 import { requireSuperadmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { CreateUserForm, UserRow } from "../forms";
@@ -11,10 +11,7 @@ export default async function TeamPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-navy-900">Superadmins</h1>
-        <p className="mt-1 text-sm text-slate-500">Your team. Superadmins manage every organization and admin account.</p>
-      </div>
+      <PageIntro>Your team. Superadmins manage every organization and admin account.</PageIntro>
       <div className="grid gap-6 lg:grid-cols-5">
         <Card className="overflow-hidden lg:col-span-3">
           <CardHeader title={`${users.length} superadmin(s)`} />
@@ -26,7 +23,7 @@ export default async function TeamPage() {
         </Card>
         <Card className="lg:col-span-2">
           <CardHeader title="Add superadmin" subtitle="Full access to all organizations" />
-          <div className="p-6">
+          <div className="p-5">
             <CreateUserForm orgId={null} label="Create superadmin" />
           </div>
         </Card>

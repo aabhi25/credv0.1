@@ -2,7 +2,7 @@
 
 import { useActionState, useState, useTransition, type FormEvent } from "react";
 import { Check, KeyRound, Pencil, X } from "lucide-react";
-import { Button, Field, inputClass } from "@/components/ui";
+import { ActiveBadge, Button, Field, inputClass } from "@/components/ui";
 import { formatDateTime } from "@/lib/format";
 import {
   createOrganization,
@@ -198,19 +198,13 @@ export function UserRow({ user, isSelf = false }: { user: UserRowData; isSelf?: 
   };
 
   return (
-    <li className="px-6 py-4">
+    <li className="px-5 py-3">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-medium text-slate-900">{user.name}</span>
             {isSelf && <span className="text-xs text-slate-400">(you)</span>}
-            <span
-              className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${
-                user.active ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20" : "bg-slate-100 text-slate-600 ring-slate-300"
-              }`}
-            >
-              {user.active ? "Active" : "Disabled"}
-            </span>
+            <ActiveBadge active={user.active} on="Active" off="Disabled" />
           </div>
           <div className="text-sm text-slate-500">{user.email}</div>
           <div className="mt-0.5 text-xs text-slate-400">

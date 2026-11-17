@@ -43,7 +43,7 @@ export function ProgramForm({ program, liveReady }: { program?: Program; liveRea
   const e = state.errors ?? {};
 
   return (
-    <form action={action} className="space-y-8">
+    <form action={action} className="space-y-6">
       <section className="grid gap-5 sm:grid-cols-2">
         <Field label="Program name" error={e.name}>
           <input

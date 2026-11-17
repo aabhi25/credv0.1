@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { Download } from "lucide-react";
-import { Card, inputClass, StatusBadge } from "@/components/ui";
+import { Download, Search } from "lucide-react";
+import { Card, Chip, inputClass, secondaryLinkClass, StatusBadge } from "@/components/ui";
 import { applicantWhere } from "@/lib/applicant-filters";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -43,53 +43,59 @@ export default async function ApplicantsPage({ searchParams }: { searchParams: S
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-navy-900">Applicants</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            {total} check(s) · <span className="text-emerald-700">{eligibleCount} eligible</span>
-          </p>
-        </div>
-        <a
-          href={`/admin/applicants/export?${qs({ page: undefined })}`}
-          className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-navy-900 hover:bg-slate-50"
-        >
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
+        <form className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row">
+          {sp.status && <input type="hidden" name="status" value={sp.status} />}
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input name="q" defaultValue={sp.q} placeholder="Search name, mobile or PAN" className={`${inputClass} pl-9`} />
+          </div>
+          <select name="program" defaultValue={sp.program ?? ""} className={`${inputClass} sm:w-52`}>
+            <option value="">All programs</option>
+            {programs.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <button className={secondaryLinkClass}>Apply</button>
+        </form>
+        <a href={`/admin/applicants/export?${qs({ page: undefined })}`} className={secondaryLinkClass}>
           <Download className="h-4 w-4" /> Export CSV
         </a>
       </div>
 
-      <form className="grid gap-3 sm:grid-cols-[1fr_200px_180px_auto]">
-        <input name="q" defaultValue={sp.q} placeholder="Search name, mobile or PAN" className={inputClass} />
-        <select name="program" defaultValue={sp.program ?? ""} className={inputClass}>
-          <option value="">All programs</option>
-          {programs.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2">
+          {[
+            ["", "All"],
+            ["APPROVED", "Eligible"],
+            ["DECLINED", "Not eligible"],
+            ["ERROR", "Error"],
+          ].map(([value, label]) => (
+            <Chip key={label} href={`?${qs({ status: value, page: undefined })}`} active={(sp.status ?? "") === value}>
+              {label}
+            </Chip>
           ))}
-        </select>
-        <select name="status" defaultValue={sp.status ?? ""} className={inputClass}>
-          <option value="">All results</option>
-          <option value="APPROVED">Eligible</option>
-          <option value="DECLINED">Not eligible</option>
-          <option value="ERROR">Error</option>
-        </select>
-        <button className="rounded-lg bg-navy-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-navy-800">Filter</button>
-      </form>
+        </div>
+        <p className="text-sm text-slate-500">
+          {total} check(s) · <span className="text-emerald-700">{eligibleCount} eligible</span>
+        </p>
+      </div>
 
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full whitespace-nowrap text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+            <thead className="border-b border-slate-100 text-left text-xs text-slate-500">
               <tr>
-                <th className="px-4 py-3 font-semibold">Applicant</th>
-                <th className="px-4 py-3 font-semibold">Mobile</th>
-                <th className="px-4 py-3 font-semibold">Program</th>
-                <th className="px-4 py-3 text-right font-semibold">Score</th>
-                <th className="px-4 py-3 text-right font-semibold">DTI</th>
-                <th className="px-4 py-3 font-semibold">Result</th>
-                <th className="px-4 py-3 text-right font-semibold">Limit</th>
-                <th className="px-4 py-3 font-semibold">Checked</th>
+                <th className="px-4 py-2.5 font-medium">Applicant</th>
+                <th className="px-4 py-2.5 font-medium">Mobile</th>
+                <th className="px-4 py-2.5 font-medium">Program</th>
+                <th className="px-4 py-2.5 text-right font-medium">Score</th>
+                <th className="px-4 py-2.5 text-right font-medium">DTI</th>
+                <th className="px-4 py-2.5 font-medium">Result</th>
+                <th className="px-4 py-2.5 text-right font-medium">Limit</th>
+                <th className="px-4 py-2.5 font-medium">Checked</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">

@@ -1,6 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { CheckCircle2, CircleDashed } from "lucide-react";
-import { Card } from "@/components/ui";
+import { Card, PageIntro } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { BUREAU_LABELS, BUREAUS, liveCredentials, type BureauCode } from "@/lib/bureaus";
 import { db } from "@/lib/db";
@@ -30,23 +30,18 @@ export default async function BureausPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-navy-900">Credit bureaus</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Turn bureaus on or off for every program. Each program picks its bureau and MOCK or LIVE mode.
-        </p>
-      </div>
+      <PageIntro>Turn bureaus on or off for every program. Each program picks its bureau and MOCK or LIVE mode.</PageIntro>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-3 md:grid-cols-2">
         {BUREAUS.map((code) => {
           const enabled = settings.find((s) => s.bureau === code)?.enabled ?? true;
           const live = Boolean(liveCredentials(code));
           const programs = usage.find((u) => u.bureau === code)?._count ?? 0;
           return (
-            <Card key={code} className="p-6">
+            <Card key={code} className="p-5">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <h2 className="text-lg font-semibold text-navy-900">{BUREAU_LABELS[code]}</h2>
+                  <h2 className="text-base font-semibold text-slate-900">{BUREAU_LABELS[code]}</h2>
                   <p className="text-sm text-slate-500">Used by {programs} program(s)</p>
                 </div>
                 <form action={toggleBureau}>

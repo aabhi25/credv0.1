@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Activity, IndianRupee, Timer, TrendingUp } from "lucide-react";
 import { ApprovalStream } from "@/components/ApprovalStream";
 import { StatCard } from "@/components/StatCard";
-import { Card, CardHeader, Pill } from "@/components/ui";
+import { Card, CardHeader, PageIntro, Pill } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { formatInrCompact } from "@/lib/format";
@@ -29,13 +29,10 @@ export default async function Dashboard() {
       .reduce((sum, r) => sum + r._count, 0);
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold text-navy-900">Dashboard</h1>
-        <p className="mt-1 text-sm text-slate-500">Eligibility activity across all programs.</p>
-      </div>
+    <div className="space-y-6">
+      <PageIntro>Eligibility activity across all programs.</PageIntro>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Total checks" value={String(total)} hint="Across all links and bulk uploads" icon={Activity} />
         <StatCard label="Conversion rate" value={`${conversion}%`} hint={`${approved._count} eligible applicants`} icon={TrendingUp} />
         <StatCard
@@ -64,13 +61,13 @@ export default async function Dashboard() {
         />
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+            <thead className="border-b border-slate-100 text-left text-xs text-slate-500">
               <tr>
-                <th className="px-6 py-3 font-semibold">Program</th>
-                <th className="px-6 py-3 font-semibold">Bureau</th>
-                <th className="px-6 py-3 text-right font-semibold">Checks</th>
-                <th className="px-6 py-3 text-right font-semibold">Eligible</th>
-                <th className="px-6 py-3 text-right font-semibold">Conversion</th>
+                <th className="px-5 py-2.5 font-medium">Program</th>
+                <th className="px-5 py-2.5 font-medium">Bureau</th>
+                <th className="px-5 py-2.5 text-right font-medium">Checks</th>
+                <th className="px-5 py-2.5 text-right font-medium">Eligible</th>
+                <th className="px-5 py-2.5 text-right font-medium">Conversion</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -79,20 +76,20 @@ export default async function Dashboard() {
                 const eligible = countFor(p.id, "APPROVED");
                 return (
                   <tr key={p.id} className="hover:bg-slate-50/60">
-                    <td className="px-6 py-4">
+                    <td className="px-5 py-3">
                       <Link href={`/admin/programs/${p.id}`} className="font-medium text-navy-900 hover:underline">
                         {p.name}
                       </Link>
                       <div className="text-xs text-slate-500">{p.category}</div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-5 py-3">
                       <Pill>
                         {p.bureau} · {p.apiMode}
                       </Pill>
                     </td>
-                    <td className="px-6 py-4 text-right tabular-nums">{checks}</td>
-                    <td className="px-6 py-4 text-right tabular-nums">{eligible}</td>
-                    <td className="px-6 py-4 text-right tabular-nums">
+                    <td className="px-5 py-3 text-right tabular-nums">{checks}</td>
+                    <td className="px-5 py-3 text-right tabular-nums">{eligible}</td>
+                    <td className="px-5 py-3 text-right tabular-nums">
                       {checks ? Math.round((eligible / checks) * 100) : 0}%
                     </td>
                   </tr>

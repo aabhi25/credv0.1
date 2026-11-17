@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Card, CardHeader, Pill } from "@/components/ui";
+import { ActiveBadge, Card, CardHeader, Pill } from "@/components/ui";
 import { requireSuperadmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getBaseUrl } from "@/lib/url";
@@ -31,14 +31,8 @@ export default async function OrganizationPage({ params }: { params: Promise<{ i
             ← Organizations
           </Link>
           <div className="mt-2 flex items-center gap-3">
-            <h1 className="text-2xl font-semibold text-navy-900">{org.name}</h1>
-            <span
-              className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset ${
-                org.active ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20" : "bg-slate-100 text-slate-600 ring-slate-300"
-              }`}
-            >
-              {org.active ? "Active" : "Disabled"}
-            </span>
+            <h1 className="text-xl font-semibold text-slate-900">{org.name}</h1>
+            <ActiveBadge active={org.active} on="Active" off="Disabled" />
           </div>
         </div>
         <OrganizationStatusButton orgId={org.id} active={org.active} name={org.name} />
@@ -50,7 +44,7 @@ export default async function OrganizationPage({ params }: { params: Promise<{ i
         </div>
       )}
 
-      <Card className="p-6">
+      <Card className="p-5">
         <RenameOrganizationForm orgId={org.id} name={org.name} />
       </Card>
 
@@ -58,7 +52,7 @@ export default async function OrganizationPage({ params }: { params: Promise<{ i
         <Card className="overflow-hidden lg:col-span-3">
           <CardHeader title="Admin accounts" subtitle="Edit email, reset password, or disable access" />
           {org.users.length === 0 ? (
-            <p className="px-6 py-10 text-center text-sm text-slate-500">No admins yet.</p>
+            <p className="px-5 py-10 text-center text-sm text-slate-500">No admins yet.</p>
           ) : (
             <ul className="divide-y divide-slate-100">
               {org.users.map((u) => (
@@ -69,7 +63,7 @@ export default async function OrganizationPage({ params }: { params: Promise<{ i
         </Card>
         <Card className="lg:col-span-2">
           <CardHeader title="Add admin" subtitle={`Another login for ${org.name}`} />
-          <div className="p-6">
+          <div className="p-5">
             <CreateUserForm orgId={org.id} label="Create admin" />
           </div>
         </Card>
@@ -78,7 +72,7 @@ export default async function OrganizationPage({ params }: { params: Promise<{ i
       <Card className="overflow-hidden">
         <CardHeader title="Programs" subtitle="Managed by this organization's admins" />
         {org.programs.length === 0 ? (
-          <p className="px-6 py-10 text-center text-sm text-slate-500">No programs yet.</p>
+          <p className="px-5 py-10 text-center text-sm text-slate-500">No programs yet.</p>
         ) : (
           <ul className="divide-y divide-slate-100">
             {org.programs.map((p) => (

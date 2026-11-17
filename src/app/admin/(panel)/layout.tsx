@@ -1,21 +1,33 @@
 import { cookies } from "next/headers";
-import { AppShell, type NavItem } from "@/components/AppShell";
+import { AppShell, type NavSection } from "@/components/AppShell";
 import { requireAdmin } from "@/lib/auth";
 import { SIDEBAR_COOKIE } from "@/lib/sidebar";
 import { logout } from "../login/actions";
 
-const nav: NavItem[] = [
-  { href: "/admin", label: "Dashboard", icon: "dashboard" },
-  { href: "/admin/programs", label: "Programs", icon: "programs" },
-  { href: "/admin/applicants", label: "Applicants", icon: "applicants" },
-  { href: "/admin/bureaus", label: "Bureaus", icon: "bureaus" },
+const sections: NavSection[] = [
+  { title: "Overview", items: [{ href: "/admin", label: "Dashboard", icon: "dashboard", color: "navy" }] },
+  {
+    title: "Eligibility",
+    items: [
+      { href: "/admin/programs", label: "Programs", icon: "programs", color: "violet" },
+      { href: "/admin/applicants", label: "Applicants", icon: "applicants", color: "emerald" },
+    ],
+  },
+  { title: "Settings", items: [{ href: "/admin/bureaus", label: "Bureaus", icon: "bureaus", color: "sky" }] },
 ];
 
 export default async function PanelLayout({ children }: { children: React.ReactNode }) {
   const admin = await requireAdmin();
   const collapsed = (await cookies()).get(SIDEBAR_COOKIE)?.value === "1";
   return (
-    <AppShell nav={nav} subtitle={admin.organization.name} userLabel={admin.email} logout={logout} defaultCollapsed={collapsed}>
+    <AppShell
+      sections={sections}
+      home="/admin"
+      subtitle={admin.organization.name}
+      userLabel={admin.email}
+      logout={logout}
+      defaultCollapsed={collapsed}
+    >
       {children}
     </AppShell>
   );

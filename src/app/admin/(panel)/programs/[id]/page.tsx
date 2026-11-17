@@ -37,7 +37,7 @@ export default async function ProgramPage({ params }: { params: Promise<{ id: st
             ← Programs
           </Link>
           <p className="mt-2 text-xs font-semibold uppercase tracking-wider text-gold-500">{program.category}</p>
-          <h1 className="text-2xl font-semibold text-navy-900">{program.name}</h1>
+          <h1 className="text-xl font-semibold text-slate-900">{program.name}</h1>
         </div>
         <Link
           href={`/admin/applicants?program=${program.id}`}
@@ -56,14 +56,14 @@ export default async function ProgramPage({ params }: { params: Promise<{ id: st
       <div className="grid gap-6 lg:grid-cols-5">
         <Card className="lg:col-span-3">
           <CardHeader title="Rule engine" subtitle="Criteria applied to every check on this program" />
-          <div className="p-6">
+          <div className="p-5">
             <ProgramForm program={program} liveReady={liveReady} />
           </div>
         </Card>
         <div className="space-y-6 lg:col-span-2">
           <Card>
             <CardHeader title="Bulk eligibility upload" subtitle="Check a list of applicants against this program" />
-            <div className="p-6">
+            <div className="p-5">
               <BulkUpload programId={program.id} />
             </div>
           </Card>

@@ -8,7 +8,7 @@ type Row = EligibilityCheck & { program?: { name: string } };
 
 export function ApprovalStream({ checks, showProgram = true }: { checks: Row[]; showProgram?: boolean }) {
   if (!checks.length) {
-    return <p className="px-6 py-10 text-center text-sm text-slate-500">No eligibility checks yet.</p>;
+    return <p className="px-5 py-10 text-center text-sm text-slate-500">No eligibility checks yet.</p>;
   }
   return (
     <ul className="divide-y divide-slate-100">
@@ -18,7 +18,7 @@ export function ApprovalStream({ checks, showProgram = true }: { checks: Row[]; 
         const iconColor =
           c.status === "APPROVED" ? "text-emerald-600" : c.status === "DECLINED" ? "text-rose-500" : "text-amber-500";
         return (
-          <li key={c.id} className="flex items-start gap-4 px-6 py-4">
+          <li key={c.id} className="flex items-start gap-4 px-5 py-3">
             <Icon className={`mt-0.5 h-5 w-5 shrink-0 ${iconColor}`} />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-baseline gap-x-2">

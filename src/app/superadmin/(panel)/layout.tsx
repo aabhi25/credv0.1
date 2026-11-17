@@ -1,12 +1,17 @@
 import { cookies } from "next/headers";
-import { AppShell, type NavItem } from "@/components/AppShell";
+import { AppShell, type NavSection } from "@/components/AppShell";
 import { requireSuperadmin } from "@/lib/auth";
 import { SIDEBAR_COOKIE } from "@/lib/sidebar";
 import { logout } from "../../admin/login/actions";
 
-const nav: NavItem[] = [
-  { href: "/superadmin", label: "Organizations", icon: "organizations", match: ["/superadmin/organizations"] },
-  { href: "/superadmin/team", label: "Superadmins", icon: "superadmins" },
+const sections: NavSection[] = [
+  {
+    title: "Customers",
+    items: [
+      { href: "/superadmin", label: "Organizations", icon: "organizations", color: "violet", match: ["/superadmin/organizations"] },
+    ],
+  },
+  { title: "Platform", items: [{ href: "/superadmin/team", label: "Superadmins", icon: "superadmins", color: "navy" }] },
 ];
 
 export default async function SuperadminLayout({ children }: { children: React.ReactNode }) {
@@ -14,7 +19,8 @@ export default async function SuperadminLayout({ children }: { children: React.R
   const collapsed = (await cookies()).get(SIDEBAR_COOKIE)?.value === "1";
   return (
     <AppShell
-      nav={nav}
+      sections={sections}
+      home="/superadmin"
       subtitle="Platform administration"
       badge="Superadmin"
       userLabel={user.email}
