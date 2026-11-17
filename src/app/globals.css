@@ -22,6 +22,14 @@
   --animate-drawer-in: drawer-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
   --animate-glow-drift: glow-drift 14s ease-in-out infinite alternate;
   --animate-fade-in: fade-in 0.2s ease-out both;
+  --animate-dialog-in: dialog-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
 }
 
 @keyframes nav-in {

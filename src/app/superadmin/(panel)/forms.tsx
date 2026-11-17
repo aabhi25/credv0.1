@@ -2,6 +2,7 @@
 
 import { useActionState, useState, useTransition, type FormEvent } from "react";
 import { Check, KeyRound, Pencil, X } from "lucide-react";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { ActiveBadge, Button, Field, inputClass } from "@/components/ui";
 import { formatDateTime } from "@/lib/format";
 import {
@@ -119,16 +120,28 @@ export function RenameOrganizationForm({ orgId, name }: { orgId: string; name: s
 
 export function OrganizationStatusButton({ orgId, active, name }: { orgId: string; active: boolean; name: string }) {
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
   return (
     <Button
       variant={active ? "secondary" : "primary"}
       disabled={pending}
       className={active ? "text-rose-700" : ""}
-      onClick={() => {
-        const msg = active
-          ? `Disable ${name}? Its admins will be signed out and all its eligibility links will stop working until you enable it again.`
-          : `Enable ${name}? Its admins can sign in and its active links will work again.`;
-        if (confirm(msg)) startTransition(() => setOrganizationActive(orgId, !active));
+      onClick={async () => {
+        const ok = await confirm(
+          active
+            ? {
+                title: `Disable ${name}?`,
+                message: "Its admins will be signed out and all its eligibility links will stop working until you enable it again.",
+                confirmLabel: "Disable organization",
+                tone: "danger",
+              }
+            : {
+                title: `Enable ${name}?`,
+                message: "Its admins can sign in again and its active eligibility links will work.",
+                confirmLabel: "Enable organization",
+              },
+        );
+        if (ok) startTransition(() => setOrganizationActive(orgId, !active));
       }}
     >
       {pending ? "Updating…" : active ? "Disable organization" : "Enable organization"}
@@ -184,13 +197,25 @@ export function UserRow({ user, isSelf = false }: { user: UserRowData; isSelf?: 
   const onSubmit = useSubmit(action);
   const [statusPending, startTransition] = useTransition();
   const [statusError, setStatusError] = useState<string | null>(null);
+  const confirm = useConfirm();
   const e = state.errors ?? {};
 
-  const toggle = () => {
-    const msg = user.active
-      ? `Disable ${user.email}? They will be signed out and can't sign in until re-enabled.`
-      : `Enable ${user.email}? They will be able to sign in again.`;
-    if (!confirm(msg)) return;
+  const toggle = async () => {
+    const ok = await confirm(
+      user.active
+        ? {
+            title: `Disable ${user.name}?`,
+            message: `${user.email} will be signed out and can't sign in until you enable the account again.`,
+            confirmLabel: "Disable account",
+            tone: "danger",
+          }
+        : {
+            title: `Enable ${user.name}?`,
+            message: `${user.email} will be able to sign in again.`,
+            confirmLabel: "Enable account",
+          },
+    );
+    if (!ok) return;
     startTransition(async () => {
       const res = await setUserActive(user.id, !user.active);
       setStatusError(res.error ?? null);
