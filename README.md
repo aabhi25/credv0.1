@@ -1,4 +1,4 @@
-# Preapproved Credit Eligibility
+# CredCap AI
 
 Instant pre-approved credit checks with configurable rule engines and pluggable credit bureaus.
 

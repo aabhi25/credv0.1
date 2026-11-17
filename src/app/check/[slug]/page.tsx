@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { Clock, ShieldCheck } from "lucide-react";
+import { Clock } from "lucide-react";
+import { APP_NAME, LogoMark } from "@/components/Logo";
 import { BUREAU_LABELS, type BureauCode } from "@/lib/bureaus";
 import { db } from "@/lib/db";
 import { programAvailability } from "@/lib/eligibility";
@@ -30,7 +31,7 @@ export default async function CheckPage({ params }: Props) {
       <div className="bg-navy-900 pb-32 pt-12">
         <div className="mx-auto max-w-xl px-4 text-center">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/20">
-            <ShieldCheck className="h-6 w-6 text-gold-400" />
+            <LogoMark className="h-7 w-7" />
           </div>
           <p className="mt-5 text-xs font-semibold uppercase tracking-[0.2em] text-gold-400">{program.category}</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">Check your pre-approval</h1>
@@ -55,7 +56,7 @@ export default async function CheckPage({ params }: Props) {
             </div>
           )}
         </div>
-        <p className="mt-6 text-center text-xs text-slate-400">PreApprove · Secure eligibility check</p>
+        <p className="mt-6 text-center text-xs text-slate-400">{APP_NAME} · Secure eligibility check</p>
       </main>
     </div>
   );

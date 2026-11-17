@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { Logo } from "@/components/Logo";
+import { APP_NAME, Logo } from "@/components/Logo";
 import { Button, Field, inputClass } from "@/components/ui";
 import { login } from "./actions";
 
@@ -21,7 +21,7 @@ export default function LoginPage() {
             Run separate rule engines for every partner, connect any bureau and share a link that decides in seconds.
           </p>
         </div>
-        <p className="text-xs text-navy-300">© PreApprove</p>
+        <p className="text-xs text-navy-300">© {APP_NAME}</p>
       </div>
       <div className="flex items-center justify-center px-6">
         <form action={action} className="w-full max-w-sm space-y-5">
