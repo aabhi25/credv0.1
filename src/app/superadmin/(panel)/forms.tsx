@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useState, useTransition, type FormEvent } from "react";
-import { AlertTriangle, CircleCheck, CircleX, KeyRound, Loader2, Pencil, PlugZap, UserPlus } from "lucide-react";
+import { AlertTriangle, CircleCheck, CircleX, KeyRound, Loader2, Pencil, Plus, PlugZap, UserPlus } from "lucide-react";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { Modal } from "@/components/Modal";
 import { ActiveBadge, BureauStatusBadge, Button, Field, inputClass } from "@/components/ui";
@@ -69,32 +69,50 @@ function PasswordInput({ name, error, optional = false }: { name: string; error?
   );
 }
 
-export function CreateOrganizationForm() {
+/** "New organization" button that opens the create form in a popup. */
+export function NewOrganizationButton() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button onClick={() => setOpen(true)}>
+        <Plus className="h-4 w-4" /> New organization
+      </Button>
+      {open && (
+        <Modal
+          title="New organization"
+          description="Creates the organization and its first admin login."
+          onClose={() => setOpen(false)}
+        >
+          <CreateOrganizationForm onCancel={() => setOpen(false)} />
+        </Modal>
+      )}
+    </>
+  );
+}
+
+// On success the server action redirects to the new organization's page.
+function CreateOrganizationForm({ onCancel }: { onCancel: () => void }) {
   const [state, action, pending] = useActionState(createOrganization, {});
   const onSubmit = useSubmit(action);
   const e = state.errors ?? {};
   return (
-    <form onSubmit={onSubmit} className="space-y-5">
+    <form onSubmit={onSubmit} className="space-y-4">
       <Field label="Organization name" error={e.orgName} hint="e.g. the NBFC's legal or brand name">
         <input name="orgName" className={inputClass} />
       </Field>
-      <div className="border-t border-slate-100 pt-5">
-        <p className="mb-4 text-sm font-semibold text-navy-900">First admin account</p>
+      <div className="space-y-4 border-t border-slate-100 pt-4">
+        <p className="text-sm font-semibold text-slate-900">First admin account</p>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Admin name" error={e.adminName}>
             <input name="adminName" className={inputClass} />
           </Field>
           <Field label="Admin email or username" error={e.adminEmail}>
-            <input name="adminEmail" type="text" className={inputClass} />
+            <input name="adminEmail" type="text" autoComplete="off" className={inputClass} />
           </Field>
         </div>
-        <div className="mt-4">
-          <PasswordInput name="adminPassword" error={e.adminPassword} />
-        </div>
+        <PasswordInput name="adminPassword" error={e.adminPassword} />
       </div>
-      <Button type="submit" disabled={pending}>
-        {pending ? "Creating…" : "Create organization"}
-      </Button>
+      <ModalActions onCancel={onCancel} pending={pending} label="Create organization" />
     </form>
   );
 }
