@@ -6,6 +6,7 @@ import { CopyLink } from "@/components/CopyLink";
 import { Card, CardHeader } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { allBureauStatuses } from "@/lib/bureaus";
+import { enabledBureaus } from "@/lib/org-bureaus";
 import { programAvailability } from "@/lib/eligibility";
 import { db } from "@/lib/db";
 import { getBaseUrl } from "@/lib/url";
@@ -29,7 +30,7 @@ export default async function ProgramPage({ params }: { params: Promise<{ id: st
     getBaseUrl(),
   ]);
   if (!program) notFound();
-  const availability = await programAvailability(program);
+  const [availability, allowed] = await Promise.all([programAvailability(program), enabledBureaus(organizationId)]);
   const blockedReason = availability.ok ? null : availability.reason;
 
   return (
@@ -70,7 +71,7 @@ export default async function ProgramPage({ params }: { params: Promise<{ id: st
         <Card className="lg:col-span-3">
           <CardHeader title="Rule engine" subtitle="Criteria applied to every check on this program" />
           <div className="p-5">
-            <ProgramForm program={program} bureauStatus={allBureauStatuses()} />
+            <ProgramForm program={program} bureauStatus={allBureauStatuses()} allowed={allowed} />
           </div>
         </Card>
         <div className="space-y-6 lg:col-span-2">

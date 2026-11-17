@@ -43,7 +43,7 @@ async function main() {
     await db.bureauSetting.upsert({
       where: { organizationId_bureau: { organizationId: org.id, bureau } },
       update: {},
-      create: { organizationId: org.id, bureau },
+      create: { organizationId: org.id, bureau, enabled: true },
     });
   }
 

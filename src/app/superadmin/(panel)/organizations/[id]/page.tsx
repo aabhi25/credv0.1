@@ -2,10 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ActiveBadge, BureauStatusBadge, Card, CardHeader, Pill } from "@/components/ui";
 import { requireSuperadmin } from "@/lib/auth";
-import { getBureauStatus, type BureauCode } from "@/lib/bureaus";
+import { BUREAU_LABELS, BUREAUS, getBureauStatus, type BureauCode } from "@/lib/bureaus";
 import { db } from "@/lib/db";
 import { getBaseUrl } from "@/lib/url";
-import { CreateUserForm, OrganizationStatusButton, RenameOrganizationForm, UserRow } from "../../forms";
+import { CreateUserForm, OrganizationBureaus, OrganizationStatusButton, RenameOrganizationForm, UserRow } from "../../forms";
 
 export const dynamic = "force-dynamic";
 
@@ -17,12 +17,20 @@ export default async function OrganizationPage({ params }: { params: Promise<{ i
       where: { id },
       include: {
         users: { orderBy: { createdAt: "asc" } },
+        bureaus: true,
         programs: { orderBy: { createdAt: "asc" }, include: { _count: { select: { checks: true } } } },
       },
     }),
     getBaseUrl(),
   ]);
   if (!org) notFound();
+  const bureaus = BUREAUS.map((code) => ({
+    code,
+    label: BUREAU_LABELS[code],
+    enabled: org.bureaus.some((b) => b.bureau === code && b.enabled),
+    status: getBureauStatus(code),
+    programs: org.programs.filter((p) => p.bureau === code).length,
+  }));
 
   return (
     <div className="space-y-6">
@@ -47,6 +55,14 @@ export default async function OrganizationPage({ params }: { params: Promise<{ i
 
       <Card className="p-5">
         <RenameOrganizationForm orgId={org.id} name={org.name} />
+      </Card>
+
+      <Card className="overflow-hidden">
+        <CardHeader
+          title="Credit bureaus"
+          subtitle="Choose which bureaus this organization can see and use, e.g. the ones it holds membership with"
+        />
+        <OrganizationBureaus orgId={org.id} orgName={org.name} bureaus={bureaus} />
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-5">

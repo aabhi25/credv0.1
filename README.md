@@ -3,16 +3,16 @@
 Instant pre-approved credit checks with configurable rule engines and pluggable credit bureaus.
 
 - **Organizations and roles:** the platform hosts many organizations (e.g. NBFCs). A **superadmin** (`/superadmin`)
-  creates organizations, manages their admin accounts (email or username, password, enable or disable) and can
-  disable a whole organization. **Admins** only ever see their own organization's data.
+  creates organizations, manages their admin accounts (email or username, password, enable or disable), chooses
+  which credit bureaus each organization can see and use, and can disable a whole organization. **Admins** only ever see their own organization's data.
 - **Programs (rule engines):** one per partner group, e.g. Education or Consumer Brands. Each has its own
   bureau, criteria (min score, max DTI, max defaults, age range, approved limit) and shareable link
   `/check/<slug>`.
 - **Bureaus:** Equifax, TransUnion CIBIL, CRIF High Mark and Experian behind one adapter interface. Checks always
   call the bureau live. **No bureau is integrated yet**, so no checks run and every eligibility link shows applicants
-  "Not available yet". The admin panel shows each bureau's status.
+  "Not available yet". Organization admins only see the bureaus a superadmin enabled for them (none by default).
 - **Admin panel** (`/admin`), per organization: dashboard, programs, applicants (filter, search, CSV export), bulk CSV checks
-  and bureau on/off switches.
+  and the status of their enabled bureaus.
 
 ## Getting started
 

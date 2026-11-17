@@ -16,3 +16,6 @@ prisma/*.db-journal
 .next/
 next-env.d.ts
 *.tsbuildinfo
+
+# Confidential bureau documentation (never commit)
+vendor-docs/

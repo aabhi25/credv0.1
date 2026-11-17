@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { programAvailability, runEligibilityCheck } from "@/lib/eligibility";
+import { enabledBureaus } from "@/lib/org-bureaus";
 import { applicantSchema, programSchema } from "@/lib/validation";
 
 export type ProgramFormState = { errors?: Record<string, string>; saved?: boolean };
@@ -23,6 +24,12 @@ export async function saveProgram(
     const errors: Record<string, string> = {};
     for (const issue of parsed.error.issues) errors[String(issue.path[0])] ??= issue.message;
     return { errors };
+  }
+
+  // A program may keep a bureau that was later disabled, but can't switch to one that isn't enabled.
+  const existing = id ? await db.program.findFirst({ where: { id, organizationId }, select: { bureau: true } }) : null;
+  if (parsed.data.bureau !== existing?.bureau && !(await enabledBureaus(organizationId)).includes(parsed.data.bureau)) {
+    return { errors: { bureau: "This bureau isn't enabled for your organization" } };
   }
 
   const clash = await db.program.findUnique({ where: { slug: parsed.data.slug } });

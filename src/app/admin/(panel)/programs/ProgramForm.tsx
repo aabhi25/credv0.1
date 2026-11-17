@@ -26,8 +26,19 @@ function slugify(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
-export function ProgramForm({ program, bureauStatus }: { program?: Program; bureauStatus: Record<BureauCode, BureauStatus> }) {
-  const initial = program ?? defaults;
+export function ProgramForm({
+  program,
+  bureauStatus,
+  allowed,
+}: {
+  program?: Program;
+  bureauStatus: Record<BureauCode, BureauStatus>;
+  /** Bureaus the superadmin enabled for this organization. */
+  allowed: BureauCode[];
+}) {
+  const initial = program ?? { ...defaults, bureau: allowed[0] ?? defaults.bureau };
+  // Keep an existing program's bureau selectable even if it has since been disabled.
+  const options = BUREAUS.filter((b) => allowed.includes(b) || b === program?.bureau);
   const [state, action, pending] = useActionState<ProgramFormState, FormData>(
     saveProgram.bind(null, program?.id ?? null),
     {},
@@ -74,12 +85,16 @@ export function ProgramForm({ program, bureauStatus }: { program?: Program; bure
       <section className="rounded-xl border border-slate-200 p-5">
         <h3 className="text-sm font-semibold text-navy-900">Credit bureau</h3>
         <div className="mt-4 grid gap-5 sm:grid-cols-2">
-          <Field label="Bureau">
+          <Field label="Bureau" error={e.bureau}>
             <select name="bureau" value={bureau} onChange={(ev) => setBureau(ev.target.value)} className={inputClass}>
-              {BUREAUS.map((b) => (
+              {options.map((b) => (
                 <option key={b} value={b}>
                   {BUREAU_LABELS[b]}
-                  {bureauStatus[b] !== "READY" ? ` (${BUREAU_STATUS_LABELS[bureauStatus[b]].toLowerCase()})` : ""}
+                  {!allowed.includes(b)
+                    ? " (not enabled)"
+                    : bureauStatus[b] !== "READY"
+                      ? ` (${BUREAU_STATUS_LABELS[bureauStatus[b]].toLowerCase()})`
+                      : ""}
                 </option>
               ))}
             </select>
@@ -91,7 +106,15 @@ export function ProgramForm({ program, bureauStatus }: { program?: Program; bure
             </div>
           </div>
         </div>
-        {bureauStatus[bureau as BureauCode] !== "READY" && (
+        {!allowed.includes(bureau as BureauCode) ? (
+          <div className="mt-4 flex gap-2.5 rounded-lg bg-amber-50 px-3.5 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <p>
+              {BUREAU_LABELS[bureau as BureauCode]} is no longer enabled for your organization, so this program can&apos;t run
+              checks. Choose another bureau or ask the platform team to enable it.
+            </p>
+          </div>
+        ) : bureauStatus[bureau as BureauCode] !== "READY" && (
           <div className="mt-4 flex gap-2.5 rounded-lg bg-amber-50 px-3.5 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
             <p>

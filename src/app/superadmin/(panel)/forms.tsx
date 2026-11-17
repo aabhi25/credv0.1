@@ -3,13 +3,15 @@
 import { useActionState, useState, useTransition, type FormEvent } from "react";
 import { Check, KeyRound, Pencil, X } from "lucide-react";
 import { useConfirm } from "@/components/ConfirmDialog";
-import { ActiveBadge, Button, Field, inputClass } from "@/components/ui";
+import { ActiveBadge, BureauStatusBadge, Button, Field, inputClass } from "@/components/ui";
+import type { BureauStatus } from "@/lib/bureaus/types";
 import { formatDateTime } from "@/lib/format";
 import {
   createOrganization,
   createUser,
   renameOrganization,
   setOrganizationActive,
+  setOrganizationBureau,
   setUserActive,
   updateUser,
   type FormState,
@@ -280,5 +282,62 @@ export function UserRow({ user, isSelf = false }: { user: UserRowData; isSelf?: 
         </form>
       )}
     </li>
+  );
+}
+
+type OrgBureau = { code: string; label: string; enabled: boolean; status: BureauStatus; programs: number };
+
+/** Superadmin switches for which credit bureaus an organization may use. */
+export function OrganizationBureaus({ orgId, orgName, bureaus }: { orgId: string; orgName: string; bureaus: OrgBureau[] }) {
+  const [pendingCode, setPendingCode] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
+  const confirm = useConfirm();
+
+  const toggle = async (b: OrgBureau) => {
+    if (b.enabled && b.programs > 0) {
+      const ok = await confirm({
+        title: `Disable ${b.label} for ${orgName}?`,
+        message: `${b.programs} program(s) use it. Their eligibility links will show "Not available yet" and no checks will run until you enable it again.`,
+        confirmLabel: "Disable bureau",
+        tone: "danger",
+      });
+      if (!ok) return;
+    }
+    setPendingCode(b.code);
+    startTransition(async () => {
+      await setOrganizationBureau(orgId, b.code, !b.enabled);
+      setPendingCode(null);
+    });
+  };
+
+  return (
+    <ul className="divide-y divide-slate-100">
+      {bureaus.map((b) => (
+        <li key={b.code} className="flex items-center justify-between gap-4 px-5 py-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium text-slate-900">{b.label}</span>
+              <BureauStatusBadge status={b.status} />
+            </div>
+            <div className="mt-0.5 text-xs text-slate-500">
+              {b.enabled ? "Visible to this organization" : "Hidden from this organization"} · used by {b.programs} program(s)
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={b.enabled}
+            aria-label={`${b.enabled ? "Disable" : "Enable"} ${b.label} for ${orgName}`}
+            disabled={pendingCode === b.code}
+            onClick={() => toggle(b)}
+            className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-50 ${b.enabled ? "bg-navy-900" : "bg-slate-300"}`}
+          >
+            <span
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${b.enabled ? "left-[22px]" : "left-0.5"}`}
+            />
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }

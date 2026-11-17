@@ -18,7 +18,7 @@ export async function programAvailability(program: Program): Promise<Availabilit
   const setting = await db.bureauSetting.findUnique({
     where: { organizationId_bureau: { organizationId: program.organizationId, bureau } },
   });
-  if (setting && !setting.enabled) return { ok: false, reason: `${label} is turned off for your organization` };
+  if (!setting?.enabled) return { ok: false, reason: `${label} is not enabled for your organization` };
   const status = getBureauStatus(bureau);
   if (status === "NOT_INTEGRATED") return { ok: false, reason: `${label} is not integrated yet` };
   if (status === "NEEDS_CREDENTIALS") return { ok: false, reason: `${label} API credentials are not configured` };

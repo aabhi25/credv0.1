@@ -42,7 +42,8 @@ export async function createOrganization(_prev: FormState, formData: FormData): 
   const org = await db.organization.create({
     data: {
       name: d.orgName,
-      bureaus: { create: BUREAUS.map((bureau) => ({ bureau })) },
+      // No bureaus until a superadmin enables them for this organization.
+      bureaus: { create: BUREAUS.map((bureau) => ({ bureau, enabled: false })) },
       users: {
         create: { name: d.adminName, email: d.adminEmail, role: "ADMIN", passwordHash: await hashPassword(d.adminPassword) },
       },
@@ -120,4 +121,17 @@ export async function setUserActive(userId: string, active: boolean): Promise<{ 
   });
   revalidatePath("/superadmin", "layout");
   return {};
+}
+
+/** Enables or disables a credit bureau for one organization. */
+export async function setOrganizationBureau(orgId: string, bureau: string, enabled: boolean) {
+  await requireSuperadmin();
+  if (!BUREAUS.includes(bureau as (typeof BUREAUS)[number])) return;
+  await db.bureauSetting.upsert({
+    where: { organizationId_bureau: { organizationId: orgId, bureau } },
+    update: { enabled },
+    create: { organizationId: orgId, bureau, enabled },
+  });
+  revalidatePath("/superadmin", "layout");
+  revalidatePath("/admin", "layout");
 }
