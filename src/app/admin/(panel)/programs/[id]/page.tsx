@@ -30,7 +30,11 @@ export default async function ProgramPage({ params }: { params: Promise<{ id: st
     getBaseUrl(),
   ]);
   if (!program) notFound();
-  const [availability, allowed] = await Promise.all([programAvailability(program), enabledBureaus(organizationId)]);
+  const [availability, allowed, existing] = await Promise.all([
+    programAvailability(program),
+    enabledBureaus(organizationId),
+    db.program.findMany({ where: { organizationId }, select: { category: true }, distinct: ["category"] }),
+  ]);
   const blockedReason = availability.ok ? null : availability.reason;
 
   return (
@@ -67,27 +71,26 @@ export default async function ProgramPage({ params }: { params: Promise<{ id: st
         {!program.active && <p className="mt-2 text-xs text-amber-700">This link is paused. Applicants will see it as inactive.</p>}
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-5">
-        <Card className="lg:col-span-3">
-          <CardHeader title="Rule engine" subtitle="Criteria applied to every check on this program" />
-          <div className="p-5">
-            <ProgramForm program={program} bureauStatus={allBureauStatuses()} allowed={allowed} />
+      <ProgramForm
+        program={program}
+        bureauStatus={allBureauStatuses()}
+        allowed={allowed}
+        baseUrl={baseUrl}
+        categories={existing.map((p) => p.category)}
+      />
+
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <Card>
+          <CardHeader title="Recent checks" subtitle="Latest 15 for this program" />
+          <ApprovalStream checks={program.checks} showProgram={false} />
+        </Card>
+        <Card>
+          <CardHeader title="Bulk check" subtitle="Upload a CSV of applicants" />
+          <div className="p-4">
+            <BulkUpload programId={program.id} blockedReason={blockedReason} />
           </div>
         </Card>
-        <div className="space-y-6 lg:col-span-2">
-          <Card>
-            <CardHeader title="Bulk eligibility upload" subtitle="Check a list of applicants against this program" />
-            <div className="p-5">
-              <BulkUpload programId={program.id} blockedReason={blockedReason} />
-            </div>
-          </Card>
-        </div>
       </div>
-
-      <Card>
-        <CardHeader title="Recent checks" subtitle="Latest 15 for this program" />
-        <ApprovalStream checks={program.checks} showProgram={false} />
-      </Card>
 
       <div className="flex justify-end">
         <DeleteProgram id={program.id} name={program.name} checks={program._count.checks} />

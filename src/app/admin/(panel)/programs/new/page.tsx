@@ -3,12 +3,18 @@ import { Landmark } from "lucide-react";
 import { Card } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { allBureauStatuses } from "@/lib/bureaus";
+import { db } from "@/lib/db";
 import { enabledBureaus } from "@/lib/org-bureaus";
+import { getBaseUrl } from "@/lib/url";
 import { ProgramForm } from "../ProgramForm";
 
 export default async function NewProgramPage() {
   const { organizationId } = await requireAdmin();
-  const allowed = await enabledBureaus(organizationId);
+  const [allowed, baseUrl, existing] = await Promise.all([
+    enabledBureaus(organizationId),
+    getBaseUrl(),
+    db.program.findMany({ where: { organizationId }, select: { category: true }, distinct: ["category"] }),
+  ]);
   return (
     <div className="space-y-6">
       <div>
@@ -29,9 +35,12 @@ export default async function NewProgramPage() {
           </p>
         </Card>
       ) : (
-        <Card className="p-5">
-          <ProgramForm bureauStatus={allBureauStatuses()} allowed={allowed} />
-        </Card>
+        <ProgramForm
+          bureauStatus={allBureauStatuses()}
+          allowed={allowed}
+          baseUrl={baseUrl}
+          categories={existing.map((p) => p.category)}
+        />
       )}
     </div>
   );
