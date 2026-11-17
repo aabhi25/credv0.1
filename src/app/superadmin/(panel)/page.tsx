@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { Building2, ChevronRight } from "lucide-react";
+import { Building2, LogIn } from "lucide-react";
 import { ActiveBadge, Card, CardHeader, PageIntro } from "@/components/ui";
 import { requireSuperadmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
+import { viewOrganization } from "../view-as";
 import { NewOrganizationButton } from "./forms";
 
 export const dynamic = "force-dynamic";
@@ -39,8 +40,8 @@ export default async function OrganizationsPage() {
           ) : (
             <ul className="divide-y divide-slate-100">
               {orgs.map((org) => (
-                <li key={org.id}>
-                  <Link href={`/superadmin/organizations/${org.id}`} className="flex items-center gap-4 px-5 py-3 hover:bg-slate-50">
+                <li key={org.id} className="flex items-center gap-2 pr-4 hover:bg-slate-50">
+                  <Link href={`/superadmin/organizations/${org.id}`} className="flex min-w-0 flex-1 items-center gap-4 px-5 py-3">
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-600">
                       <Building2 className="h-4 w-4" />
                     </span>
@@ -57,8 +58,15 @@ export default async function OrganizationsPage() {
                       <div className="font-semibold tabular-nums text-slate-900">{sumFor(checks, org.id)} checks</div>
                       <div className="text-xs tabular-nums text-emerald-700">{sumFor(eligible, org.id)} eligible</div>
                     </div>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />
                   </Link>
+                  <form action={viewOrganization.bind(null, org.id)}>
+                    <button
+                      title={`Open ${org.name}'s admin panel`}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-navy-800 hover:border-navy-300 hover:bg-navy-50"
+                    >
+                      <LogIn className="h-3.5 w-3.5" /> Open
+                    </button>
+                  </form>
                 </li>
               ))}
             </ul>

@@ -4,7 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
+  ArrowLeft,
   Building2,
+  Eye,
   Gauge,
   Landmark,
   LogOut,
@@ -59,6 +61,8 @@ type Props = {
   userLabel: string;
   logout: () => Promise<void>;
   defaultCollapsed: boolean;
+  /** Set when a superadmin is viewing an organization's admin panel. */
+  viewingAs?: { organization: string; exit: () => Promise<void> };
   children: React.ReactNode;
 };
 
@@ -75,7 +79,7 @@ function Tile({ item, size = "sm" }: { item: NavItem; size?: "sm" | "lg" }) {
   );
 }
 
-export function AppShell({ sections, home, subtitle, badge, userLabel, logout, defaultCollapsed, children }: Props) {
+export function AppShell({ sections, home, subtitle, badge, userLabel, logout, defaultCollapsed, viewingAs, children }: Props) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -206,7 +210,24 @@ export function AppShell({ sections, home, subtitle, badge, userLabel, logout, d
       )}
 
       <div className={`transition-[padding] duration-300 ease-out ${collapsed ? "lg:pl-16" : "lg:pl-56"}`}>
-        <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur sm:px-6">
+        <div className="sticky top-0 z-20">
+        {viewingAs && (
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 bg-gradient-to-r from-gold-500 to-gold-400 px-4 py-1.5 text-sm text-navy-950 sm:px-6">
+            <span className="flex min-w-0 items-center gap-2">
+              <Eye className="h-4 w-4 shrink-0" />
+              <span className="truncate">
+                Viewing <b className="font-semibold">{viewingAs.organization}</b> as superadmin. Changes you make apply to
+                this organization.
+              </span>
+            </span>
+            <form action={viewingAs.exit}>
+              <button className="inline-flex items-center gap-1.5 rounded-md bg-navy-950/90 px-2.5 py-1 text-xs font-semibold text-white hover:bg-navy-950">
+                <ArrowLeft className="h-3.5 w-3.5" /> Back to superadmin
+              </button>
+            </form>
+          </div>
+        )}
+        <header className="flex h-14 items-center gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur sm:px-6">
           <button
             onClick={() => setMobileOpen(true)}
             className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-navy-300 lg:hidden"
@@ -232,6 +253,7 @@ export function AppShell({ sections, home, subtitle, badge, userLabel, logout, d
             </div>
           )}
         </header>
+        </div>
         <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">{children}</main>
       </div>
     </div>

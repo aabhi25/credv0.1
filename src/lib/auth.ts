@@ -25,19 +25,43 @@ export async function getSessionUser() {
   });
   if (!user || !user.active || user.sessionVersion !== session.ver) return null;
   if (user.role === "ADMIN" && !user.organization?.active) return null;
-  return user;
+  // Only superadmins can view an organization as its admin.
+  return { ...user, viewingOrganizationId: user.role === "SUPERADMIN" ? (session.org ?? null) : null };
 }
 
 export function homeFor(role: string) {
   return role === "SUPERADMIN" ? "/superadmin" : "/admin";
 }
 
-/** Organization admin. Use at the top of every /admin page, route and server action. */
-export async function requireAdmin() {
+/**
+ * Who is acting as the organization admin: the admin themselves, or a superadmin viewing
+ * that organization. `admin` is null when the signed-in user can't use the admin panel.
+ */
+export async function getAdminContext() {
   const user = await getSessionUser();
+  if (!user) return { user: null, admin: null };
+  const base = { id: user.id, email: user.email, name: user.name, role: user.role };
+  if (user.role === "ADMIN" && user.organization) {
+    return { user, admin: { ...base, organizationId: user.organization.id, organization: user.organization, viewingAsSuperadmin: false } };
+  }
+  if (user.role === "SUPERADMIN" && user.viewingOrganizationId) {
+    const organization = await db.organization.findUnique({
+      where: { id: user.viewingOrganizationId },
+      select: { id: true, name: true, active: true },
+    });
+    if (organization) {
+      return { user, admin: { ...base, organizationId: organization.id, organization, viewingAsSuperadmin: true } };
+    }
+  }
+  return { user, admin: null };
+}
+
+/** Organization admin (or a superadmin viewing an organization). Use at the top of every /admin page, route and action. */
+export async function requireAdmin() {
+  const { user, admin } = await getAdminContext();
   if (!user) redirect("/admin/login");
-  if (user.role !== "ADMIN" || !user.organization) redirect(homeFor(user.role));
-  return { ...user, organizationId: user.organization.id, organization: user.organization };
+  if (!admin) redirect(homeFor(user.role));
+  return admin;
 }
 
 /** Platform owner. Use at the top of every /superadmin page and server action. */

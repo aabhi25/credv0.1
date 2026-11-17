@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AlertTriangle, Building2 } from "lucide-react";
+import { AlertTriangle, Building2, LogIn } from "lucide-react";
 import { CopyLink } from "@/components/CopyLink";
 import { ActiveBadge, BureauStatusBadge, Card, CardHeader, Pill } from "@/components/ui";
 import { requireSuperadmin } from "@/lib/auth";
@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 import { orgBureauStatuses } from "@/lib/org-bureaus";
 import { getBaseUrl } from "@/lib/url";
+import { viewOrganization } from "../../../view-as";
 import { AddUserButton, OrganizationBureaus, OrganizationStatusButton, RenameOrganizationButton, UserRow } from "../../forms";
 
 export const dynamic = "force-dynamic";
@@ -71,7 +72,12 @@ export default async function OrganizationPage({ params }: { params: Promise<{ i
               <p className="text-xs text-slate-500">Created {formatDateTime(org.createdAt)}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <form action={viewOrganization.bind(null, org.id)}>
+              <button className="inline-flex items-center gap-2 rounded-lg bg-navy-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-navy-800">
+                <LogIn className="h-4 w-4" /> Open admin panel
+              </button>
+            </form>
             <RenameOrganizationButton orgId={org.id} name={org.name} />
             <OrganizationStatusButton orgId={org.id} active={org.active} name={org.name} />
           </div>

@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { AppShell, type NavSection } from "@/components/AppShell";
 import { requireAdmin } from "@/lib/auth";
 import { SIDEBAR_COOKIE } from "@/lib/sidebar";
+import { exitOrganizationView } from "../../superadmin/view-as";
 import { logout } from "../login/actions";
 
 const sections: NavSection[] = [
@@ -27,6 +28,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
       userLabel={admin.email}
       logout={logout}
       defaultCollapsed={collapsed}
+      viewingAs={admin.viewingAsSuperadmin ? { organization: admin.organization.name, exit: exitOrganizationView } : undefined}
     >
       {children}
     </AppShell>
