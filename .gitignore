@@ -9,3 +9,10 @@ build/
 coverage/
 .vscode/
 .idea/
+
+# Local database
+prisma/*.db
+prisma/*.db-journal
+.next/
+next-env.d.ts
+*.tsbuildinfo

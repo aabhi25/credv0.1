@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-navy-50: #f2f5fb;
+  --color-navy-100: #e3e9f5;
+  --color-navy-200: #c4d0ea;
+  --color-navy-300: #94a9d4;
+  --color-navy-500: #3d5a99;
+  --color-navy-700: #1a3366;
+  --color-navy-800: #12264f;
+  --color-navy-900: #0b1b3d;
+  --color-navy-950: #07122b;
+
+  --color-gold-400: #d4b26a;
+  --color-gold-500: #c19a48;
+}
+
+body {
+  background: #ffffff;
+  color: #0f172a;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Range sliders in navy */
+input[type="range"] {
+  accent-color: var(--color-navy-800);
+}

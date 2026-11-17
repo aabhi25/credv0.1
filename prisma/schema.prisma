@@ -1,0 +1,70 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model AdminUser {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime @default(now())
+}
+
+// Global settings per credit bureau. Credentials live in env vars, never in the DB.
+model BureauSetting {
+  id        String   @id @default(cuid())
+  bureau    String   @unique // EQUIFAX | CIBIL | CRIF | EXPERIAN
+  enabled   Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+}
+
+// A rule engine. Each program has its own criteria, bureau and shareable link.
+model Program {
+  id            String   @id @default(cuid())
+  name          String
+  slug          String   @unique
+  category      String // e.g. Education, Consumer Brands
+  description   String   @default("")
+  bureau        String   @default("EQUIFAX")
+  apiMode       String   @default("MOCK") // MOCK | LIVE
+  minScore      Int      @default(650)
+  maxDtiPct     Int      @default(40)
+  maxDefaults   Int      @default(0)
+  minAge        Int      @default(21)
+  maxAge        Int      @default(60)
+  approvedLimit Int      @default(50000)
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  checks        EligibilityCheck[]
+}
+
+model EligibilityCheck {
+  id            String   @id @default(cuid())
+  programId     String
+  program       Program  @relation(fields: [programId], references: [id], onDelete: Cascade)
+  name          String
+  mobile        String
+  panMasked     String // e.g. XXXXX1234F; full PAN is never stored
+  panHash       String // SHA-256, lets admins spot repeat checks
+  age           Int
+  bureau        String
+  apiMode       String
+  score         Int?
+  dtiPct        Int?
+  defaults      Int?
+  status        String // APPROVED | DECLINED | ERROR
+  reasons       String   @default("[]") // JSON array of strings
+  approvedLimit Int      @default(0)
+  latencyMs     Int      @default(0)
+  source        String   @default("LINK") // LINK | BULK
+  createdAt     DateTime @default(now())
+
+  @@index([programId, createdAt])
+  @@index([status])
+}
