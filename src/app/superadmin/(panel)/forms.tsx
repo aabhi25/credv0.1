@@ -1,8 +1,9 @@
 "use client";
 
 import { useActionState, useEffect, useState, useTransition, type FormEvent } from "react";
-import { Check, KeyRound, Pencil, X } from "lucide-react";
+import { KeyRound, Pencil, UserPlus } from "lucide-react";
 import { useConfirm } from "@/components/ConfirmDialog";
+import { Modal } from "@/components/Modal";
 import { ActiveBadge, BureauStatusBadge, Button, Field, inputClass } from "@/components/ui";
 import { CREDENTIAL_FIELDS, type BureauCode, type BureauStatus } from "@/lib/bureaus/types";
 import { formatDateTime } from "@/lib/format";
@@ -16,7 +17,6 @@ import {
   setOrganizationBureau,
   setUserActive,
   updateUser,
-  type FormState,
 } from "../actions";
 
 /** Submits without React's automatic form reset, so typed values survive validation errors. */
@@ -65,15 +65,6 @@ function PasswordInput({ name, error, optional = false }: { name: string; error?
   );
 }
 
-function Notice({ state }: { state: FormState }) {
-  if (!state.ok) return null;
-  return (
-    <span className="inline-flex items-center gap-1 text-sm text-emerald-700">
-      <Check className="h-4 w-4" /> {state.ok}
-    </span>
-  );
-}
-
 export function CreateOrganizationForm() {
   const [state, action, pending] = useActionState(createOrganization, {});
   const onSubmit = useSubmit(action);
@@ -104,21 +95,49 @@ export function CreateOrganizationForm() {
   );
 }
 
-export function RenameOrganizationForm({ orgId, name }: { orgId: string; name: string }) {
+/** "Rename" button that opens a popup with the organization name. */
+export function RenameOrganizationButton({ orgId, name }: { orgId: string; name: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button variant="secondary" onClick={() => setOpen(true)}>
+        <Pencil className="h-4 w-4" /> Rename
+      </Button>
+      {open && (
+        <Modal title="Rename organization" onClose={() => setOpen(false)} size="sm">
+          <RenameOrganizationForm orgId={orgId} name={name} onDone={() => setOpen(false)} />
+        </Modal>
+      )}
+    </>
+  );
+}
+
+function RenameOrganizationForm({ orgId, name, onDone }: { orgId: string; name: string; onDone: () => void }) {
   const [state, action, pending] = useActionState(renameOrganization.bind(null, orgId), {});
   const onSubmit = useSubmit(action);
+  useEffect(() => {
+    if (state.ok) onDone();
+  }, [state, onDone]);
   return (
-    <form onSubmit={onSubmit} className="flex flex-wrap items-end gap-3">
-      <div className="min-w-64 flex-1">
-        <Field label="Organization name" error={state.errors?.orgName}>
-          <input name="orgName" defaultValue={name} className={inputClass} />
-        </Field>
-      </div>
-      <Button type="submit" variant="secondary" disabled={pending}>
-        {pending ? "Saving…" : "Save"}
-      </Button>
-      <Notice state={state} />
+    <form onSubmit={onSubmit} className="space-y-5">
+      <Field label="Organization name" error={state.errors?.orgName}>
+        <input name="orgName" defaultValue={name} className={inputClass} />
+      </Field>
+      <ModalActions onCancel={onDone} pending={pending} label="Save name" />
     </form>
+  );
+}
+
+function ModalActions({ onCancel, pending, label }: { onCancel: () => void; pending: boolean; label: string }) {
+  return (
+    <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end">
+      <Button type="button" variant="secondary" onClick={onCancel}>
+        Cancel
+      </Button>
+      <Button type="submit" disabled={pending}>
+        {pending ? "Saving…" : label}
+      </Button>
+    </div>
   );
 }
 
@@ -153,35 +172,52 @@ export function OrganizationStatusButton({ orgId, active, name }: { orgId: strin
   );
 }
 
-export function CreateUserForm({ orgId, label }: { orgId: string | null; label: string }) {
+/** "Add admin" / "Add superadmin" button that opens the new-account form in a popup. */
+export function AddUserButton({
+  orgId,
+  label,
+  title,
+  description,
+}: {
+  orgId: string | null;
+  label: string;
+  title: string;
+  description: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button onClick={() => setOpen(true)} className="py-1.5">
+        <UserPlus className="h-4 w-4" /> {label}
+      </Button>
+      {open && (
+        <Modal title={title} description={description} onClose={() => setOpen(false)}>
+          <CreateUserForm orgId={orgId} label={`Create ${label.replace(/^Add /, "")}`} onDone={() => setOpen(false)} />
+        </Modal>
+      )}
+    </>
+  );
+}
+
+function CreateUserForm({ orgId, label, onDone }: { orgId: string | null; label: string; onDone: () => void }) {
   const [state, action, pending] = useActionState(createUser.bind(null, orgId), {});
   const onSubmit = useSubmit(action);
-  const [formKey, setFormKey] = useState(0);
   const e = state.errors ?? {};
+  useEffect(() => {
+    if (state.ok) onDone();
+  }, [state, onDone]);
   return (
-    <form key={formKey} onSubmit={onSubmit} className="space-y-4">
+    <form onSubmit={onSubmit} className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Name" error={e.name}>
           <input name="name" className={inputClass} />
         </Field>
         <Field label="Email or username" error={e.email}>
-          <input name="email" type="text" className={inputClass} />
+          <input name="email" type="text" autoComplete="off" className={inputClass} />
         </Field>
       </div>
       <PasswordInput name="password" error={e.password} />
-      <div className="flex flex-wrap items-center gap-4">
-        <Button type="submit" disabled={pending}>
-          {pending ? "Creating…" : label}
-        </Button>
-        {state.ok && (
-          <>
-            <Notice state={state} />
-            <button type="button" onClick={() => setFormKey((k) => k + 1)} className="text-sm text-navy-700 hover:underline">
-              Clear form
-            </button>
-          </>
-        )}
-      </div>
+      <ModalActions onCancel={onDone} pending={pending} label={label} />
     </form>
   );
 }
@@ -195,14 +231,20 @@ type UserRowData = {
   createdAt: Date;
 };
 
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]!.toUpperCase())
+    .join("");
+}
+
 export function UserRow({ user, isSelf = false }: { user: UserRowData; isSelf?: boolean }) {
   const [editing, setEditing] = useState(false);
-  const [state, action, pending] = useActionState(updateUser.bind(null, user.id), {});
-  const onSubmit = useSubmit(action);
   const [statusPending, startTransition] = useTransition();
   const [statusError, setStatusError] = useState<string | null>(null);
   const confirm = useConfirm();
-  const e = state.errors ?? {};
 
   const toggle = async () => {
     const ok = await confirm(
@@ -228,33 +270,38 @@ export function UserRow({ user, isSelf = false }: { user: UserRowData; isSelf?: 
 
   return (
     <li className="px-5 py-3">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-slate-900">{user.name}</span>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <span
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
+            user.active ? "bg-navy-50 text-navy-700" : "bg-slate-100 text-slate-400"
+          }`}
+        >
+          {initials(user.name) || "?"}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium text-slate-900">{user.name}</span>
             {isSelf && <span className="text-xs text-slate-400">(you)</span>}
             <ActiveBadge active={user.active} on="Active" off="Disabled" />
           </div>
-          <div className="text-sm text-slate-500">{user.email}</div>
-          <div className="mt-0.5 text-xs text-slate-400">
-            {user.lastLoginAt ? `Last sign-in ${formatDateTime(user.lastLoginAt)}` : "Never signed in"}
+          <div className="truncate text-xs text-slate-500">
+            {user.email} · {user.lastLoginAt ? `last sign-in ${formatDateTime(user.lastLoginAt)}` : "never signed in"}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           <button
             type="button"
-            onClick={() => setEditing((v) => !v)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-navy-900 hover:bg-slate-50"
+            onClick={() => setEditing(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
           >
-            {editing ? <X className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
-            {editing ? "Close" : "Edit"}
+            <Pencil className="h-3.5 w-3.5" /> Edit
           </button>
           {!isSelf && (
             <button
               type="button"
               onClick={toggle}
               disabled={statusPending}
-              className={`rounded-lg px-3 py-1.5 text-sm font-medium disabled:opacity-50 ${
+              className={`rounded-lg px-2.5 py-1.5 text-xs font-medium disabled:opacity-50 ${
                 user.active ? "text-rose-700 hover:bg-rose-50" : "bg-navy-900 text-white hover:bg-navy-800"
               }`}
             >
@@ -265,25 +312,35 @@ export function UserRow({ user, isSelf = false }: { user: UserRowData; isSelf?: 
       </div>
       {statusError && <p className="mt-2 text-sm text-rose-600">{statusError}</p>}
       {editing && (
-        <form onSubmit={onSubmit} className="mt-4 space-y-4 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Name" error={e.name}>
-              <input name="name" defaultValue={user.name} className={inputClass} />
-            </Field>
-            <Field label="Email or username" error={e.email}>
-              <input name="email" type="text" defaultValue={user.email} className={inputClass} />
-            </Field>
-          </div>
-          <PasswordInput name="password" error={e.password} optional />
-          <div className="flex flex-wrap items-center gap-4">
-            <Button type="submit" disabled={pending}>
-              {pending ? "Saving…" : "Save changes"}
-            </Button>
-            <Notice state={state} />
-          </div>
-        </form>
+        <Modal title={`Edit ${user.name}`} description="Change the name, sign-in ID or password." onClose={() => setEditing(false)}>
+          <EditUserForm user={user} onDone={() => setEditing(false)} />
+        </Modal>
       )}
     </li>
+  );
+}
+
+function EditUserForm({ user, onDone }: { user: UserRowData; onDone: () => void }) {
+  const [state, action, pending] = useActionState(updateUser.bind(null, user.id), {});
+  const onSubmit = useSubmit(action);
+  const e = state.errors ?? {};
+  useEffect(() => {
+    if (state.ok) onDone();
+  }, [state, onDone]);
+  return (
+    <form onSubmit={onSubmit} className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Name" error={e.name}>
+          <input name="name" defaultValue={user.name} className={inputClass} />
+        </Field>
+        <Field label="Email or username" error={e.email}>
+          <input name="email" type="text" defaultValue={user.email} autoComplete="off" className={inputClass} />
+        </Field>
+      </div>
+      <PasswordInput name="password" error={e.password} optional />
+      <p className="text-xs text-slate-500">Changing the password signs this person out of every device.</p>
+      <ModalActions onCancel={onDone} pending={pending} label="Save changes" />
+    </form>
   );
 }
 
