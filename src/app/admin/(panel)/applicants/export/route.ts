@@ -31,10 +31,13 @@ export async function GET(req: Request) {
       source: c.source,
       score: c.score ?? "",
       dti_pct: c.dtiPct ?? "",
+      monthly_income: c.monthlyIncome ?? "",
+      existing_emi: c.existingEmi ?? "",
       defaults: c.defaults ?? "",
       result: c.status === "APPROVED" ? "Eligible" : c.status === "DECLINED" ? "Not eligible" : "Error",
       approved_limit: c.approvedLimit,
       reasons: parseReasons(c.reasons).join("; "),
+      bureau_ref: c.bureauRef ?? "",
     })),
   );
 

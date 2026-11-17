@@ -18,6 +18,10 @@ export async function checkEligibility(slug: string, _prev: CheckState, formData
     mobile: String(formData.get("mobile") ?? ""),
     pan: String(formData.get("pan") ?? ""),
     dob: String(formData.get("dob") ?? ""),
+    address: String(formData.get("address") ?? ""),
+    state: String(formData.get("state") ?? ""),
+    pincode: String(formData.get("pincode") ?? ""),
+    monthlyIncome: String(formData.get("monthlyIncome") ?? ""),
   };
 
   const errors: Record<string, string> = {};

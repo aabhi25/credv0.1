@@ -5,8 +5,7 @@ import { ApprovalStream } from "@/components/ApprovalStream";
 import { CopyLink } from "@/components/CopyLink";
 import { Card, CardHeader } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
-import { allBureauStatuses } from "@/lib/bureaus";
-import { enabledBureaus } from "@/lib/org-bureaus";
+import { enabledBureaus, orgBureauStatuses } from "@/lib/org-bureaus";
 import { programAvailability } from "@/lib/eligibility";
 import { db } from "@/lib/db";
 import { getBaseUrl } from "@/lib/url";
@@ -30,9 +29,10 @@ export default async function ProgramPage({ params }: { params: Promise<{ id: st
     getBaseUrl(),
   ]);
   if (!program) notFound();
-  const [availability, allowed, existing] = await Promise.all([
+  const [availability, allowed, statuses, existing] = await Promise.all([
     programAvailability(program),
     enabledBureaus(organizationId),
+    orgBureauStatuses(organizationId),
     db.program.findMany({ where: { organizationId }, select: { category: true }, distinct: ["category"] }),
   ]);
   const blockedReason = availability.ok ? null : availability.reason;
@@ -73,7 +73,7 @@ export default async function ProgramPage({ params }: { params: Promise<{ id: st
 
       <ProgramForm
         program={program}
-        bureauStatus={allBureauStatuses()}
+        bureauStatus={statuses}
         allowed={allowed}
         baseUrl={baseUrl}
         categories={existing.map((p) => p.category)}

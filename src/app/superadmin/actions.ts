@@ -4,9 +4,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireSuperadmin } from "@/lib/auth";
-import { BUREAUS } from "@/lib/bureaus/types";
+import { BUREAUS, CREDENTIAL_FIELDS, INTEGRATED_BUREAUS, type BureauCode } from "@/lib/bureaus/types";
 import { db } from "@/lib/db";
 import { hashPassword } from "@/lib/password";
+import { decryptJson, encryptJson } from "@/lib/secrets";
 
 export type FormState = { errors?: Record<string, string>; ok?: string };
 
@@ -132,6 +133,65 @@ export async function setOrganizationBureau(orgId: string, bureau: string, enabl
     update: { enabled },
     create: { organizationId: orgId, bureau, enabled },
   });
+  revalidatePath("/superadmin", "layout");
+  revalidatePath("/admin", "layout");
+}
+
+/**
+ * Saves an organization's API credentials for a bureau (its own membership), encrypted.
+ * When updating, a blank field keeps the value already saved, so secrets never have to be re-shown.
+ */
+export async function saveBureauCredentials(
+  orgId: string,
+  bureau: string,
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  await requireSuperadmin();
+  const code = bureau as BureauCode;
+  const fields = CREDENTIAL_FIELDS[code];
+  if (!INTEGRATED_BUREAUS.includes(code) || !fields) return { errors: { form: "This bureau isn't integrated" } };
+
+  const existing = await db.bureauCredential.findUnique({ where: { organizationId_bureau: { organizationId: orgId, bureau } } });
+  const previous = existing ? decryptJson<Record<string, string>>(existing.encrypted) : {};
+
+  const errors: Record<string, string> = {};
+  const endpointUrl = String(formData.get("endpointUrl") ?? "").trim() || existing?.endpointUrl || "";
+  try {
+    const url = new URL(endpointUrl);
+    // http is only allowed for a local test server during development.
+    const localDev = process.env.NODE_ENV !== "production" && ["localhost", "127.0.0.1"].includes(url.hostname);
+    if (url.protocol !== "https:" && !(localDev && url.protocol === "http:")) errors.endpointUrl = "Use an https:// address";
+  } catch {
+    errors.endpointUrl = "Enter the full API address, e.g. https://…";
+  }
+
+  const values: Record<string, string> = {};
+  for (const f of fields) {
+    const typed = String(formData.get(f.key) ?? "").trim();
+    const value = typed || previous[f.key] || "";
+    if (!value) errors[f.key] = `${f.label} is required`;
+    else if (value.length > f.maxLength) errors[f.key] = `${f.label} can be at most ${f.maxLength} characters`;
+    values[f.key] = value;
+  }
+  if (Object.keys(errors).length) return { errors };
+
+  // A non-secret label so the UI can show which account is saved without decrypting.
+  const member = values.memberNumber ?? "";
+  const hint = member ? `Member ••••${member.slice(-4)}` : "";
+  await db.bureauCredential.upsert({
+    where: { organizationId_bureau: { organizationId: orgId, bureau } },
+    update: { endpointUrl, encrypted: encryptJson(values), hint },
+    create: { organizationId: orgId, bureau, endpointUrl, encrypted: encryptJson(values), hint },
+  });
+  revalidatePath("/superadmin", "layout");
+  revalidatePath("/admin", "layout");
+  return { ok: existing ? "Credentials updated" : "Credentials saved" };
+}
+
+export async function removeBureauCredentials(orgId: string, bureau: string) {
+  await requireSuperadmin();
+  await db.bureauCredential.deleteMany({ where: { organizationId: orgId, bureau } });
   revalidatePath("/superadmin", "layout");
   revalidatePath("/admin", "layout");
 }

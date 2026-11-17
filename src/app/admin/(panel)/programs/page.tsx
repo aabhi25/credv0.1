@@ -3,7 +3,8 @@ import { Plus } from "lucide-react";
 import { CopyLink } from "@/components/CopyLink";
 import { ActiveBadge, BureauStatusBadge, Card, PageIntro, Pill, primaryLinkClass } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
-import { allBureauStatuses, BUREAU_LABELS, type BureauCode } from "@/lib/bureaus";
+import { BUREAU_LABELS, type BureauCode } from "@/lib/bureaus";
+import { orgBureauStatuses } from "@/lib/org-bureaus";
 import { db } from "@/lib/db";
 import { formatInr } from "@/lib/format";
 import { getBaseUrl } from "@/lib/url";
@@ -16,7 +17,7 @@ export default async function ProgramsPage() {
     db.program.findMany({ where: { organizationId }, orderBy: { createdAt: "asc" }, include: { _count: { select: { checks: true } } } }),
     getBaseUrl(),
   ]);
-  const statuses = allBureauStatuses();
+  const statuses = await orgBureauStatuses(organizationId);
 
   return (
     <div className="space-y-6">

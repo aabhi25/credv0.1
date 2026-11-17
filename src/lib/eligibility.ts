@@ -1,7 +1,8 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Program } from "@prisma/client";
-import { BUREAU_LABELS, BureauError, getBureauAdapter, getBureauStatus, type BureauCode } from "./bureaus";
+import { BUREAU_LABELS, BureauError, bureauStatus, getBureauAdapter, type BureauCode, type BureauReport } from "./bureaus";
 import { db } from "./db";
+import { loadBureauCredentials } from "./org-bureaus";
 import { evaluate } from "./rules";
 import { ageFrom, maskPan, parseDob, type ApplicantInput } from "./validation";
 
@@ -19,7 +20,8 @@ export async function programAvailability(program: Program): Promise<Availabilit
     where: { organizationId_bureau: { organizationId: program.organizationId, bureau } },
   });
   if (!setting?.enabled) return { ok: false, reason: `${label} is not enabled for your organization` };
-  const status = getBureauStatus(bureau);
+  const hasCredentials = (await db.bureauCredential.count({ where: { organizationId: program.organizationId, bureau } })) > 0;
+  const status = bureauStatus(bureau, hasCredentials);
   if (status === "NOT_INTEGRATED") return { ok: false, reason: `${label} is not integrated yet` };
   if (status === "NEEDS_CREDENTIALS") return { ok: false, reason: `${label} API credentials are not configured` };
   return { ok: true };
@@ -45,16 +47,36 @@ export async function runEligibilityCheck(
   let status: CheckOutcome["status"];
   let reasons: string[];
   let approvedLimit = 0;
-  let report: { score: number; dtiPct: number; defaults: number } | null = null;
+  let report: BureauReport | null = null;
+  let dtiPct: number | null = null;
 
   try {
     const availability = await programAvailability(program);
     if (!availability.ok) throw new BureauError(availability.reason);
-    report = await getBureauAdapter(bureau).fetchReport({ ...input, dob });
-    const result = evaluate(program, report, age);
-    status = result.approved ? "APPROVED" : "DECLINED";
-    reasons = result.reasons;
-    approvedLimit = result.approvedLimit;
+    const creds = await loadBureauCredentials(program.organizationId, bureau);
+    report = await getBureauAdapter(bureau, creds).fetchReport({
+      name: input.name,
+      pan: input.pan,
+      mobile: input.mobile,
+      dob,
+      address: input.address,
+      state: input.state,
+      pincode: input.pincode,
+      inquiryPurpose: program.inquiryPurpose,
+      reference: randomUUID().replace(/-/g, "").slice(0, 20),
+    });
+    dtiPct = Math.round((report.existingEmi / input.monthlyIncome) * 100);
+
+    if (!report.hit || report.score === null) {
+      // No credit file (or no score): there's nothing to assess against the rules.
+      status = "DECLINED";
+      reasons = [report.hit ? "No credit score available" : "No credit history at the bureau"];
+    } else {
+      const result = evaluate(program, { score: report.score, dtiPct, defaults: report.defaults }, age);
+      status = result.approved ? "APPROVED" : "DECLINED";
+      reasons = result.reasons;
+      approvedLimit = result.approvedLimit;
+    }
   } catch (err) {
     status = "ERROR";
     reasons = [err instanceof BureauError ? err.message : "Bureau request failed"];
@@ -70,9 +92,12 @@ export async function runEligibilityCheck(
       panHash: createHash("sha256").update(input.pan).digest("hex"),
       age,
       bureau,
-      score: report?.score,
-      dtiPct: report?.dtiPct,
-      defaults: report?.defaults,
+      score: report?.score ?? null,
+      dtiPct,
+      defaults: report?.defaults ?? null,
+      monthlyIncome: input.monthlyIncome,
+      existingEmi: report?.existingEmi ?? null,
+      bureauRef: report?.bureauRef ?? null,
       status,
       reasons: JSON.stringify(reasons),
       approvedLimit,

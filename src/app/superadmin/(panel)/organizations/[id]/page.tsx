@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ActiveBadge, BureauStatusBadge, Card, CardHeader, Pill } from "@/components/ui";
 import { requireSuperadmin } from "@/lib/auth";
-import { BUREAU_LABELS, BUREAUS, getBureauStatus, type BureauCode } from "@/lib/bureaus";
+import { BUREAU_LABELS, BUREAUS, isIntegrated, type BureauCode } from "@/lib/bureaus";
+import { orgBureauStatuses } from "@/lib/org-bureaus";
 import { db } from "@/lib/db";
 import { getBaseUrl } from "@/lib/url";
 import { CreateUserForm, OrganizationBureaus, OrganizationStatusButton, RenameOrganizationForm, UserRow } from "../../forms";
@@ -18,18 +19,22 @@ export default async function OrganizationPage({ params }: { params: Promise<{ i
       include: {
         users: { orderBy: { createdAt: "asc" } },
         bureaus: true,
+        bureauCredentials: { select: { bureau: true, hint: true, endpointUrl: true, updatedAt: true } },
         programs: { orderBy: { createdAt: "asc" }, include: { _count: { select: { checks: true } } } },
       },
     }),
     getBaseUrl(),
   ]);
   if (!org) notFound();
+  const statuses = await orgBureauStatuses(org.id);
   const bureaus = BUREAUS.map((code) => ({
     code,
     label: BUREAU_LABELS[code],
     enabled: org.bureaus.some((b) => b.bureau === code && b.enabled),
-    status: getBureauStatus(code),
+    status: statuses[code],
     programs: org.programs.filter((p) => p.bureau === code).length,
+    integrated: isIntegrated(code),
+    credential: org.bureauCredentials.find((c) => c.bureau === code) ?? null,
   }));
 
   return (
@@ -103,7 +108,7 @@ export default async function OrganizationPage({ params }: { params: Promise<{ i
                 </div>
                 <div className="flex items-center gap-2">
                   <Pill>{p.bureau}</Pill>
-                  <BureauStatusBadge status={getBureauStatus(p.bureau as BureauCode)} />
+                  <BureauStatusBadge status={statuses[p.bureau as BureauCode]} />
                   <span className="text-xs tabular-nums text-slate-500">{p._count.checks} checks</span>
                   {!p.active && <span className="text-xs text-amber-700">Paused</span>}
                 </div>

@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "db:push": "prisma db push",
     "db:seed": "tsx --env-file=.env prisma/seed.ts",
-    "setup": "prisma db push && npm run db:seed"
+    "setup": "prisma db push && npm run db:seed",
+    "test": "tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@prisma/client": "6.19.3",

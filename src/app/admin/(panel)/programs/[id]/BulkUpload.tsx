@@ -2,11 +2,35 @@
 
 import { useRef, useState, useTransition } from "react";
 import Papa from "papaparse";
-import { FileSpreadsheet, Loader2, UploadCloud } from "lucide-react";
+import { Download, FileSpreadsheet, Loader2, UploadCloud } from "lucide-react";
 import { Button, StatusBadge } from "@/components/ui";
 import { runBulkCheck, type BulkResult, type BulkRow } from "../actions";
 
-const REQUIRED = ["name", "mobile", "pan", "dob"] as const;
+const COLUMNS = ["name", "mobile", "pan", "dob", "address", "state", "pincode", "income"] as const;
+
+// Accept common header spellings, e.g. "PIN Code", "postal", "Monthly Income".
+const HEADER_ALIASES: Record<string, (typeof COLUMNS)[number]> = {
+  fullname: "name",
+  phone: "mobile",
+  mobileno: "mobile",
+  panno: "pan",
+  pannumber: "pan",
+  dateofbirth: "dob",
+  pin: "pincode",
+  postal: "pincode",
+  postalcode: "pincode",
+  monthlyincome: "income",
+};
+
+function normaliseHeader(h: string) {
+  const key = h.trim().toLowerCase().replace(/[^a-z]/g, "");
+  return HEADER_ALIASES[key] ?? key;
+}
+
+const TEMPLATE = [
+  COLUMNS.join(","),
+  'Asha Verma,9876543210,ABCDE1234F,14/05/1990,"12 MG Road, Indiranagar, Bengaluru",Karnataka,560038,65000',
+].join("\n");
 
 export function BulkUpload({ programId, blockedReason }: { programId: string; blockedReason: string | null }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -24,15 +48,26 @@ export function BulkUpload({ programId, blockedReason }: { programId: string; bl
     Papa.parse<Record<string, string>>(file, {
       header: true,
       skipEmptyLines: true,
-      transformHeader: (h) => h.trim().toLowerCase(),
+      transformHeader: normaliseHeader,
       complete: (parsed) => {
-        const missing = REQUIRED.filter((c) => !parsed.meta.fields?.includes(c));
+        const missing = COLUMNS.filter((c) => !parsed.meta.fields?.includes(c));
         if (missing.length) {
           setRows([]);
           setError(`Missing column(s): ${missing.join(", ")}`);
           return;
         }
-        setRows(parsed.data.map((r) => ({ name: r.name ?? "", mobile: r.mobile ?? "", pan: r.pan ?? "", dob: r.dob ?? "" })));
+        setRows(
+          parsed.data.map((r) => ({
+            name: r.name ?? "",
+            mobile: r.mobile ?? "",
+            pan: r.pan ?? "",
+            dob: r.dob ?? "",
+            address: r.address ?? "",
+            state: r.state ?? "",
+            pincode: r.pincode ?? "",
+            monthlyIncome: r.income ?? "",
+          })),
+        );
       },
       error: (err) => setError(err.message),
     });
@@ -74,7 +109,17 @@ export function BulkUpload({ programId, blockedReason }: { programId: string; bl
         <p className="mt-3 text-sm font-medium text-slate-800">
           {fileName ? `${fileName} · ${rows.length} row(s)` : "Drop a CSV here or click to browse"}
         </p>
-        <p className="mt-1 text-xs text-slate-500">Columns: name, mobile, pan, dob (YYYY-MM-DD or DD/MM/YYYY) · max 500 rows</p>
+        <p className="mt-1 text-xs text-slate-500">
+          Columns: name, mobile, pan, dob, address, state, pincode, income (monthly) · max 500 rows
+        </p>
+        <a
+          href={`data:text/csv;charset=utf-8,${encodeURIComponent(TEMPLATE)}`}
+          download="credcap-bulk-template.csv"
+          onClick={(e) => e.stopPropagation()}
+          className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-navy-700 hover:text-navy-900"
+        >
+          <Download className="h-3.5 w-3.5" /> Download template
+        </a>
         <input
           ref={inputRef}
           type="file"

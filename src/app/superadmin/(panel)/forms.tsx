@@ -1,15 +1,17 @@
 "use client";
 
-import { useActionState, useState, useTransition, type FormEvent } from "react";
+import { useActionState, useEffect, useState, useTransition, type FormEvent } from "react";
 import { Check, KeyRound, Pencil, X } from "lucide-react";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { ActiveBadge, BureauStatusBadge, Button, Field, inputClass } from "@/components/ui";
-import type { BureauStatus } from "@/lib/bureaus/types";
+import { CREDENTIAL_FIELDS, type BureauCode, type BureauStatus } from "@/lib/bureaus/types";
 import { formatDateTime } from "@/lib/format";
 import {
   createOrganization,
   createUser,
+  removeBureauCredentials,
   renameOrganization,
+  saveBureauCredentials,
   setOrganizationActive,
   setOrganizationBureau,
   setUserActive,
@@ -285,11 +287,20 @@ export function UserRow({ user, isSelf = false }: { user: UserRowData; isSelf?: 
   );
 }
 
-type OrgBureau = { code: string; label: string; enabled: boolean; status: BureauStatus; programs: number };
+type OrgBureau = {
+  code: string;
+  label: string;
+  enabled: boolean;
+  status: BureauStatus;
+  programs: number;
+  integrated: boolean;
+  credential: { hint: string; endpointUrl: string; updatedAt: Date } | null;
+};
 
-/** Superadmin switches for which credit bureaus an organization may use. */
+/** Superadmin switches for which credit bureaus an organization may use, plus its API credentials. */
 export function OrganizationBureaus({ orgId, orgName, bureaus }: { orgId: string; orgName: string; bureaus: OrgBureau[] }) {
   const [pendingCode, setPendingCode] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const confirm = useConfirm();
 
@@ -310,34 +321,144 @@ export function OrganizationBureaus({ orgId, orgName, bureaus }: { orgId: string
     });
   };
 
+  const remove = async (b: OrgBureau) => {
+    const ok = await confirm({
+      title: `Remove ${b.label} credentials?`,
+      message: `${orgName}'s programs on ${b.label} will stop running checks until new credentials are saved.`,
+      confirmLabel: "Remove credentials",
+      tone: "danger",
+    });
+    if (!ok) return;
+    setPendingCode(b.code);
+    startTransition(async () => {
+      await removeBureauCredentials(orgId, b.code);
+      setPendingCode(null);
+      setEditing(null);
+    });
+  };
+
   return (
     <ul className="divide-y divide-slate-100">
       {bureaus.map((b) => (
-        <li key={b.code} className="flex items-center justify-between gap-4 px-5 py-3">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-medium text-slate-900">{b.label}</span>
-              <BureauStatusBadge status={b.status} />
+        <li key={b.code} className="px-5 py-3">
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium text-slate-900">{b.label}</span>
+                <BureauStatusBadge status={b.status} />
+              </div>
+              <div className="mt-0.5 text-xs text-slate-500">
+                {b.enabled ? "Visible to this organization" : "Hidden from this organization"} · used by {b.programs} program(s)
+              </div>
             </div>
-            <div className="mt-0.5 text-xs text-slate-500">
-              {b.enabled ? "Visible to this organization" : "Hidden from this organization"} · used by {b.programs} program(s)
-            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={b.enabled}
+              aria-label={`${b.enabled ? "Disable" : "Enable"} ${b.label} for ${orgName}`}
+              disabled={pendingCode === b.code}
+              onClick={() => toggle(b)}
+              className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-50 ${b.enabled ? "bg-navy-900" : "bg-slate-300"}`}
+            >
+              <span
+                className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${b.enabled ? "left-[22px]" : "left-0.5"}`}
+              />
+            </button>
           </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={b.enabled}
-            aria-label={`${b.enabled ? "Disable" : "Enable"} ${b.label} for ${orgName}`}
-            disabled={pendingCode === b.code}
-            onClick={() => toggle(b)}
-            className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-50 ${b.enabled ? "bg-navy-900" : "bg-slate-300"}`}
-          >
-            <span
-              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${b.enabled ? "left-[22px]" : "left-0.5"}`}
-            />
-          </button>
+
+          {b.integrated && (
+            <div className="mt-2.5 rounded-lg bg-slate-50 px-3 py-2.5 ring-1 ring-slate-200">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div className="flex min-w-0 items-center gap-1.5 text-slate-600">
+                  <KeyRound className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                  {b.credential ? (
+                    <span className="truncate">
+                      API credentials saved · {b.credential.hint} · {new URL(b.credential.endpointUrl).host} · updated{" "}
+                      {formatDateTime(b.credential.updatedAt)}
+                    </span>
+                  ) : (
+                    <span>No API credentials yet. Checks can&apos;t run until they&apos;re added.</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setEditing(editing === b.code ? null : b.code)}
+                    className="rounded-md px-2 py-1 font-medium text-navy-700 hover:bg-white"
+                  >
+                    {editing === b.code ? "Close" : b.credential ? "Update" : "Add credentials"}
+                  </button>
+                  {b.credential && (
+                    <button
+                      type="button"
+                      onClick={() => remove(b)}
+                      disabled={pendingCode === b.code}
+                      className="rounded-md px-2 py-1 font-medium text-rose-700 hover:bg-white disabled:opacity-50"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+              </div>
+              {editing === b.code && (
+                <BureauCredentialsForm orgId={orgId} bureau={b.code as BureauCode} existing={b.credential} onSaved={() => setEditing(null)} />
+              )}
+            </div>
+          )}
         </li>
       ))}
     </ul>
+  );
+}
+
+function BureauCredentialsForm({
+  orgId,
+  bureau,
+  existing,
+  onSaved,
+}: {
+  orgId: string;
+  bureau: BureauCode;
+  existing: OrgBureau["credential"];
+  onSaved: () => void;
+}) {
+  const [state, action, pending] = useActionState(saveBureauCredentials.bind(null, orgId, bureau), {});
+  const onSubmit = useSubmit(action);
+  const fields = CREDENTIAL_FIELDS[bureau] ?? [];
+  const e = state.errors ?? {};
+
+  useEffect(() => {
+    if (state.ok) onSaved();
+  }, [state, onSaved]);
+
+  return (
+    <form onSubmit={onSubmit} className="mt-3 space-y-3 border-t border-slate-200 pt-3" autoComplete="off">
+      <p className="text-xs text-slate-500">
+        Use the credentials Equifax issued to this organization. They&apos;re stored encrypted and never shown again.
+        {existing && " Leave a field blank to keep its saved value."}
+      </p>
+      <Field label="API address" error={e.endpointUrl} hint="The test (UAT) or production URL from the bureau">
+        <input name="endpointUrl" defaultValue={existing?.endpointUrl} placeholder="https://" className={`${inputClass} font-mono`} />
+      </Field>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {fields.map((f) => (
+          <Field key={f.key} label={f.label} error={e[f.key]}>
+            <input
+              name={f.key}
+              type={f.secret ? "password" : "text"}
+              maxLength={f.maxLength}
+              placeholder={existing ? (f.secret ? "•••••• (saved)" : "Saved; leave blank to keep") : ""}
+              autoComplete={f.secret ? "new-password" : "off"}
+              spellCheck={false}
+              className={`${inputClass} font-mono`}
+            />
+          </Field>
+        ))}
+      </div>
+      {e.form && <p className="text-xs text-rose-600">{e.form}</p>}
+      <Button type="submit" disabled={pending}>
+        {pending ? "Saving…" : existing ? "Update credentials" : "Save credentials"}
+      </Button>
+    </form>
   );
 }

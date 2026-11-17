@@ -17,6 +17,7 @@ model Organization {
   users     AdminUser[]
   programs  Program[]
   bureaus   BureauSetting[]
+  bureauCredentials BureauCredential[]
 }
 
 model AdminUser {
@@ -46,6 +47,20 @@ model BureauSetting {
   @@unique([organizationId, bureau])
 }
 
+// An organization's own API access to a bureau (its membership). Secrets are AES-256-GCM encrypted.
+model BureauCredential {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bureau         String
+  endpointUrl    String
+  encrypted      String // encrypted JSON of the bureau's credential fields
+  hint           String       @default("") // non-secret label shown in the UI, e.g. masked member number
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, bureau])
+}
+
 // A rule engine. Each program has its own criteria, bureau and shareable link.
 model Program {
   id             String       @id @default(cuid())
@@ -56,6 +71,7 @@ model Program {
   category      String // e.g. Education, Consumer Brands
   description   String   @default("")
   bureau        String   @default("EQUIFAX")
+  inquiryPurpose String  @default("05") // bureau enquiry purpose code, e.g. 05 = Personal Loan
   minScore      Int      @default(650)
   maxDtiPct     Int      @default(40)
   maxDefaults   Int      @default(0)
@@ -83,6 +99,9 @@ model EligibilityCheck {
   score         Int?
   dtiPct        Int?
   defaults      Int?
+  monthlyIncome Int?
+  existingEmi   Int? // monthly EMIs from the bureau report
+  bureauRef     String? // bureau's report reference, for audit
   status        String // APPROVED | DECLINED | ERROR
   reasons       String   @default("[]") // JSON array of strings
   approvedLimit Int      @default(0)

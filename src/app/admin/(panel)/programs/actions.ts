@@ -53,7 +53,16 @@ export async function deleteProgram(id: string) {
   redirect("/admin/programs");
 }
 
-export type BulkRow = { name: string; mobile: string; pan: string; dob: string };
+export type BulkRow = {
+  name: string;
+  mobile: string;
+  pan: string;
+  dob: string;
+  address: string;
+  state: string;
+  pincode: string;
+  monthlyIncome: string;
+};
 export type BulkResult = { row: number; name: string; status: "APPROVED" | "DECLINED" | "ERROR" | "INVALID"; detail: string };
 
 const MAX_BULK_ROWS = 500;

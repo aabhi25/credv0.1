@@ -1,7 +1,10 @@
 import { z } from "zod";
+import { INQUIRY_PURPOSES, STATES, toStateCode } from "./bureaus/codes";
 
 export const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 export const MOBILE_REGEX = /^[6-9]\d{9}$/;
+export const PINCODE_REGEX = /^[1-9][0-9]{5}$/;
+const STATE_CODES = new Set(STATES.map((s) => s.code));
 
 export const applicantSchema = z.object({
   name: z.string().trim().min(2, "Enter your full name").max(100),
@@ -16,6 +19,29 @@ export const applicantSchema = z.object({
     .transform((v) => v.toUpperCase())
     .pipe(z.string().regex(PAN_REGEX, "Enter a valid PAN, e.g. ABCDE1234F")),
   dob: z.string().trim().refine((v) => parseDob(v) !== null, "Enter a valid date of birth"),
+  address: z
+    .string()
+    .trim()
+    .min(10, "Enter your full address")
+    .max(200, "Keep the address under 200 characters"),
+  // Accepts a code (MH) or a name (Maharashtra), so CSV uploads can use either.
+  state: z
+    .string()
+    .trim()
+    .transform((v) => toStateCode(v) ?? v)
+    .pipe(z.string().refine((v) => STATE_CODES.has(v), "Select your state")),
+  pincode: z.string().trim().regex(PINCODE_REGEX, "Enter a valid 6-digit PIN code"),
+  monthlyIncome: z
+    .string()
+    .trim()
+    .transform((v) => Number(v.replace(/[,\s₹]/g, "")))
+    .pipe(
+      z
+        .number({ error: "Enter your monthly income" })
+        .int("Enter a whole number")
+        .min(1000, "Enter your monthly income in rupees")
+        .max(10_00_00_000, "That looks too high; enter your monthly income"),
+    ),
 });
 
 export type ApplicantInput = z.infer<typeof applicantSchema>;
@@ -58,6 +84,9 @@ export const programSchema = z
     category: z.string().trim().min(2, "Category is required").max(60),
     description: z.string().trim().max(300).default(""),
     bureau: z.enum(["EQUIFAX", "CIBIL", "CRIF", "EXPERIAN"]),
+    inquiryPurpose: z
+      .string()
+      .refine((v) => INQUIRY_PURPOSES.some((p) => p.code === v), "Choose the loan type for bureau enquiries"),
     minScore: z.coerce.number().int().min(300).max(900),
     maxDtiPct: z.coerce.number().int().min(0).max(100),
     maxDefaults: z.coerce.number().int().min(0).max(10),

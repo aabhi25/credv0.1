@@ -1,19 +1,20 @@
 import { AlertTriangle, CheckCircle2, CircleDashed, CircleSlash, Landmark } from "lucide-react";
 import { BureauStatusBadge, Card, PageIntro } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
-import { BUREAU_LABELS, bureauCredentials, getBureauStatus } from "@/lib/bureaus";
+import { BUREAU_LABELS } from "@/lib/bureaus";
 import { db } from "@/lib/db";
-import { enabledBureaus } from "@/lib/org-bureaus";
+import { enabledBureaus, orgBureauStatuses } from "@/lib/org-bureaus";
 
 export const dynamic = "force-dynamic";
 
 export default async function BureausPage() {
   const { organizationId } = await requireAdmin();
-  const [bureaus, usage] = await Promise.all([
+  const [bureaus, statuses, usage] = await Promise.all([
     enabledBureaus(organizationId),
+    orgBureauStatuses(organizationId),
     db.program.groupBy({ by: ["bureau"], where: { organizationId }, _count: true }),
   ]);
-  const anyReady = bureaus.some((b) => getBureauStatus(b) === "READY");
+  const anyReady = bureaus.some((b) => statuses[b] === "READY");
 
   return (
     <div className="space-y-6">
@@ -47,9 +48,9 @@ export default async function BureausPage() {
 
           <div className="grid gap-3 md:grid-cols-2">
             {bureaus.map((code) => {
-              const status = getBureauStatus(code);
+              const status = statuses[code];
               const integrated = status !== "NOT_INTEGRATED";
-              const hasCredentials = Boolean(bureauCredentials(code));
+              const hasCredentials = status === "READY";
               const programs = usage.find((u) => u.bureau === code)?._count ?? 0;
               return (
                 <Card key={code} className="p-5">

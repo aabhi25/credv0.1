@@ -1,36 +1,33 @@
-import { BureauError, BUREAU_LABELS, BUREAUS, type BureauAdapter, type BureauCode, type BureauStatus } from "./types";
+import { createEquifaxAdapter, type EquifaxCredentials } from "./equifax";
+import { BureauError, BUREAU_LABELS, INTEGRATED_BUREAUS, type BureauAdapter, type BureauCode, type BureauStatus } from "./types";
 
 export * from "./types";
 
-type Credentials = { url: string; key: string };
+/** Stored credentials: the endpoint plus the bureau's own fields (see CREDENTIAL_FIELDS). */
+export type StoredCredentials = { endpointUrl: string } & Record<string, string>;
 
-/**
- * Real bureau integrations. Each entry builds an adapter that calls the bureau's API and maps
- * its response to a BureauReport. None are built yet: each bureau needs member onboarding and
- * its own API documentation before it can be added here.
- */
-const INTEGRATIONS: Partial<Record<BureauCode, (creds: Credentials) => BureauAdapter>> = {};
+/** Built bureau integrations. Add a bureau here and to INTEGRATED_BUREAUS in types.ts. */
+const INTEGRATIONS: Partial<Record<BureauCode, (creds: StoredCredentials) => BureauAdapter>> = {
+  EQUIFAX: (creds) => createEquifaxAdapter(creds as unknown as EquifaxCredentials),
+};
 
-export function bureauCredentials(code: BureauCode): Credentials | null {
-  const url = process.env[`${code}_API_URL`];
-  const key = process.env[`${code}_API_KEY`];
-  return url && key ? { url, key } : null;
+export function isIntegrated(code: BureauCode) {
+  return Boolean(INTEGRATIONS[code]);
 }
 
-export function getBureauStatus(code: BureauCode): BureauStatus {
-  if (!INTEGRATIONS[code]) return "NOT_INTEGRATED";
-  if (!bureauCredentials(code)) return "NEEDS_CREDENTIALS";
-  return "READY";
+export function bureauStatus(code: BureauCode, hasCredentials: boolean): BureauStatus {
+  if (!isIntegrated(code)) return "NOT_INTEGRATED";
+  return hasCredentials ? "READY" : "NEEDS_CREDENTIALS";
 }
 
-export function allBureauStatuses(): Record<BureauCode, BureauStatus> {
-  return Object.fromEntries(BUREAUS.map((b) => [b, getBureauStatus(b)])) as Record<BureauCode, BureauStatus>;
-}
-
-export function getBureauAdapter(code: BureauCode): BureauAdapter {
+export function getBureauAdapter(code: BureauCode, creds: StoredCredentials | null): BureauAdapter {
   const build = INTEGRATIONS[code];
-  const creds = bureauCredentials(code);
-  if (!build) throw new BureauError(`${BUREAU_LABELS[code]} is not integrated yet`);
-  if (!creds) throw new BureauError(`${BUREAU_LABELS[code]} API credentials are not configured`);
+  if (!build) throw new BureauError(`${BUREAU_LABELS[code]} is not integrated yet`, "NOT_INTEGRATED");
+  if (!creds) throw new BureauError(`${BUREAU_LABELS[code]} API credentials are not configured`, "NO_CREDENTIALS");
   return build(creds);
+}
+
+// Guard against the client-safe list drifting from the real registry.
+for (const code of INTEGRATED_BUREAUS) {
+  if (!INTEGRATIONS[code]) throw new Error(`INTEGRATED_BUREAUS lists ${code} but it has no integration`);
 }

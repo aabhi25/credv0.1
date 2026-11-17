@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { BadgeCheck, CircleAlert, Loader2, Lock, RotateCcw } from "lucide-react";
 import { Button, Field, inputClass } from "@/components/ui";
+import { STATES } from "@/lib/bureaus/codes";
 import { formatInr } from "@/lib/format";
 import { checkEligibility, type CheckState } from "./actions";
 
@@ -49,6 +50,55 @@ export function CheckForm({ slug, bureauLabel }: { slug: string; bureauLabel: st
       </Field>
       <Field label="Date of birth" error={errors.dob}>
         <input name="dob" type="date" defaultValue={values?.dob} max={new Date().toISOString().slice(0, 10)} className={inputClass} />
+      </Field>
+      <Field label="Current address" error={errors.address}>
+        <textarea
+          name="address"
+          defaultValue={values?.address}
+          rows={2}
+          maxLength={200}
+          placeholder="House no., street, area, city"
+          autoComplete="street-address"
+          className={`${inputClass} resize-none`}
+        />
+      </Field>
+      <div className="grid grid-cols-[minmax(0,1fr)_7.5rem] gap-3">
+        <Field label="State" error={errors.state}>
+          <select name="state" defaultValue={values?.state ?? ""} className={inputClass}>
+            <option value="" disabled>
+              Select
+            </option>
+            {STATES.map((s) => (
+              <option key={s.code} value={s.code}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="PIN code" error={errors.pincode}>
+          <input
+            name="pincode"
+            defaultValue={values?.pincode}
+            placeholder="560038"
+            inputMode="numeric"
+            maxLength={6}
+            autoComplete="postal-code"
+            className={inputClass}
+          />
+        </Field>
+      </div>
+      <Field label="Monthly income" error={errors.monthlyIncome} hint="Take-home income per month, before EMIs">
+        <div className="flex rounded-lg border border-slate-300 bg-white focus-within:border-navy-700 focus-within:ring-2 focus-within:ring-navy-100">
+          <span className="flex items-center border-r border-slate-200 px-3 text-sm text-slate-500">₹</span>
+          <input
+            name="monthlyIncome"
+            defaultValue={values?.monthlyIncome}
+            placeholder="50,000"
+            inputMode="numeric"
+            maxLength={12}
+            className="w-full rounded-r-lg px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
+          />
+        </div>
       </Field>
 
       <div>
@@ -115,7 +165,7 @@ function Result({ state }: { state: Extract<CheckState, { kind: "result" }> }) {
       </h2>
       <p className="mx-auto mt-2 max-w-sm text-sm text-slate-500">
         {state.status === "ERROR"
-          ? "The credit bureau did not respond. Please try again in a little while."
+          ? "We couldn't fetch your credit report just now. Please try again in a little while."
           : "You are not pre-approved for this offer right now. You can check again later."}
       </p>
       {again}

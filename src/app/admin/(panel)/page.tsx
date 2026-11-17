@@ -4,7 +4,8 @@ import { ApprovalStream } from "@/components/ApprovalStream";
 import { StatCard } from "@/components/StatCard";
 import { BureauStatusBadge, Card, CardHeader, PageIntro, Pill } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
-import { allBureauStatuses, type BureauCode } from "@/lib/bureaus";
+import { type BureauCode } from "@/lib/bureaus";
+import { orgBureauStatuses } from "@/lib/org-bureaus";
 import { db } from "@/lib/db";
 import { formatInrCompact } from "@/lib/format";
 
@@ -22,7 +23,7 @@ export default async function Dashboard() {
     db.eligibilityCheck.findMany({ where: scope, orderBy: { createdAt: "desc" }, take: 10, include: { program: { select: { name: true } } } }),
   ]);
 
-  const statuses = allBureauStatuses();
+  const statuses = await orgBureauStatuses(organizationId);
   const blocked = programs.filter((p) => p.active && statuses[p.bureau as BureauCode] !== "READY");
   const total = totals._count;
   const conversion = total ? Math.round((approved._count / total) * 100) : 0;

@@ -5,6 +5,7 @@ import type { Program } from "@prisma/client";
 import { AlertTriangle, Check, CircleCheck, Link2, Loader2 } from "lucide-react";
 import { BureauStatusBadge, Button, inputClass } from "@/components/ui";
 import { formatInr } from "@/lib/format";
+import { INQUIRY_PURPOSES } from "@/lib/bureaus/codes";
 import { BUREAU_LABELS, BUREAUS, type BureauCode, type BureauStatus } from "@/lib/bureaus/types";
 import { saveProgram, type ProgramFormState } from "./actions";
 
@@ -14,6 +15,7 @@ type Values = {
   category: string;
   description: string;
   bureau: string;
+  inquiryPurpose: string;
   minScore: number;
   maxDtiPct: number;
   maxDefaults: number;
@@ -29,6 +31,7 @@ const DEFAULTS: Values = {
   category: "",
   description: "",
   bureau: "EQUIFAX",
+  inquiryPurpose: "05",
   minScore: 650,
   maxDtiPct: 40,
   maxDefaults: 0,
@@ -76,6 +79,7 @@ function toValues(p: Program | undefined, fallbackBureau: string): Values {
     category: p.category,
     description: p.description,
     bureau: p.bureau,
+    inquiryPurpose: p.inquiryPurpose,
     minScore: p.minScore,
     maxDtiPct: p.maxDtiPct,
     maxDefaults: p.maxDefaults,
@@ -134,6 +138,7 @@ export function ProgramForm({
       <input type="hidden" name="category" value={v.category} />
       <input type="hidden" name="description" value={v.description} />
       <input type="hidden" name="bureau" value={v.bureau} />
+      <input type="hidden" name="inquiryPurpose" value={v.inquiryPurpose} />
       <input type="hidden" name="minScore" value={v.minScore} />
       <input type="hidden" name="maxDtiPct" value={v.maxDtiPct} />
       <input type="hidden" name="maxDefaults" value={v.maxDefaults} />
@@ -218,6 +223,15 @@ export function ProgramForm({
             })}
           </div>
           {e.bureau && <p className="text-xs text-rose-600">{e.bureau}</p>}
+          <Label text="Loan type for bureau enquiries" error={e.inquiryPurpose} hint="Recorded by the bureau as the reason for each credit check">
+            <select value={v.inquiryPurpose} onChange={(ev) => set("inquiryPurpose", ev.target.value)} className={`${inputClass} sm:max-w-xs`}>
+              {INQUIRY_PURPOSES.map((p) => (
+                <option key={p.code} value={p.code}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </Label>
           {!bureauLive && (
             <p className="flex gap-2 text-xs leading-relaxed text-amber-800">
               <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
