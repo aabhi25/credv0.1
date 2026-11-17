@@ -10,14 +10,15 @@ import { formatInrCompact } from "@/lib/format";
 export const dynamic = "force-dynamic";
 
 export default async function Dashboard() {
-  await requireAdmin();
+  const { organizationId } = await requireAdmin();
+  const scope = { program: { organizationId } };
 
   const [totals, approved, programs, byProgram, recent] = await Promise.all([
-    db.eligibilityCheck.aggregate({ _count: true, _avg: { latencyMs: true } }),
-    db.eligibilityCheck.aggregate({ where: { status: "APPROVED" }, _count: true, _sum: { approvedLimit: true } }),
-    db.program.findMany({ orderBy: { createdAt: "asc" } }),
-    db.eligibilityCheck.groupBy({ by: ["programId", "status"], _count: true }),
-    db.eligibilityCheck.findMany({ orderBy: { createdAt: "desc" }, take: 10, include: { program: { select: { name: true } } } }),
+    db.eligibilityCheck.aggregate({ where: scope, _count: true, _avg: { latencyMs: true } }),
+    db.eligibilityCheck.aggregate({ where: { ...scope, status: "APPROVED" }, _count: true, _sum: { approvedLimit: true } }),
+    db.program.findMany({ where: { organizationId }, orderBy: { createdAt: "asc" } }),
+    db.eligibilityCheck.groupBy({ by: ["programId", "status"], where: scope, _count: true }),
+    db.eligibilityCheck.findMany({ where: scope, orderBy: { createdAt: "desc" }, take: 10, include: { program: { select: { name: true } } } }),
   ]);
 
   const total = totals._count;

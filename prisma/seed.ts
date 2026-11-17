@@ -4,18 +4,47 @@ import { hashPassword } from "../src/lib/password";
 const db = new PrismaClient();
 
 async function main() {
-  const email = process.env.ADMIN_EMAIL;
-  const password = process.env.ADMIN_PASSWORD;
-  if (!email || !password) throw new Error("Set ADMIN_EMAIL and ADMIN_PASSWORD in .env");
+  const superEmail = process.env.SUPERADMIN_EMAIL?.toLowerCase();
+  const superPassword = process.env.SUPERADMIN_PASSWORD;
+  if (!superEmail || !superPassword) throw new Error("Set SUPERADMIN_EMAIL and SUPERADMIN_PASSWORD in .env");
 
   await db.adminUser.upsert({
-    where: { email },
+    where: { email: superEmail },
     update: {},
-    create: { email, name: "Admin", passwordHash: await hashPassword(password) },
+    create: { email: superEmail, name: "Super Admin", role: "SUPERADMIN", passwordHash: await hashPassword(superPassword) },
   });
 
+  // Optional demo organization with its own admin and sample programs.
+  const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase();
+  const adminPassword = process.env.ADMIN_PASSWORD;
+  if (!adminEmail || !adminPassword) {
+    console.log(`Seeded superadmin ${superEmail}`);
+    return;
+  }
+
+  const existing = await db.adminUser.findUnique({ where: { email: adminEmail } });
+  const org =
+    (existing?.organizationId && (await db.organization.findUnique({ where: { id: existing.organizationId } }))) ||
+    (await db.organization.create({ data: { name: "Demo NBFC" } }));
+
+  if (!existing) {
+    await db.adminUser.create({
+      data: {
+        email: adminEmail,
+        name: "Demo Admin",
+        role: "ADMIN",
+        organizationId: org.id,
+        passwordHash: await hashPassword(adminPassword),
+      },
+    });
+  }
+
   for (const bureau of ["EQUIFAX", "CIBIL", "CRIF", "EXPERIAN"]) {
-    await db.bureauSetting.upsert({ where: { bureau }, update: {}, create: { bureau } });
+    await db.bureauSetting.upsert({
+      where: { organizationId_bureau: { organizationId: org.id, bureau } },
+      update: {},
+      create: { organizationId: org.id, bureau },
+    });
   }
 
   const programs = [
@@ -47,10 +76,10 @@ async function main() {
     },
   ];
   for (const p of programs) {
-    await db.program.upsert({ where: { slug: p.slug }, update: {}, create: p });
+    await db.program.upsert({ where: { slug: p.slug }, update: {}, create: { ...p, organizationId: org.id } });
   }
 
-  console.log(`Seeded admin ${email}, 4 bureaus and ${programs.length} programs`);
+  console.log(`Seeded superadmin ${superEmail} and "${org.name}" with admin ${adminEmail}`);
 }
 
 main()

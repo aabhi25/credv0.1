@@ -14,11 +14,11 @@ import { DeleteProgram } from "./DeleteProgram";
 export const dynamic = "force-dynamic";
 
 export default async function ProgramPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireAdmin();
+  const { organizationId } = await requireAdmin();
   const { id } = await params;
   const [program, baseUrl] = await Promise.all([
-    db.program.findUnique({
-      where: { id },
+    db.program.findFirst({
+      where: { id, organizationId },
       include: {
         checks: { orderBy: { createdAt: "desc" }, take: 15 },
         _count: { select: { checks: true } },

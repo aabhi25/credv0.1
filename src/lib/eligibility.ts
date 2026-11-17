@@ -23,7 +23,9 @@ export async function runEligibilityCheck(
   const bureau = program.bureau as BureauCode;
   const apiMode = program.apiMode as ApiMode;
 
-  const bureauSetting = await db.bureauSetting.findUnique({ where: { bureau } });
+  const bureauSetting = await db.bureauSetting.findUnique({
+    where: { organizationId_bureau: { organizationId: program.organizationId, bureau } },
+  });
   const started = Date.now();
   let status: CheckOutcome["status"];
   let reasons: string[];

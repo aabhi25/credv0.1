@@ -1,6 +1,6 @@
 import Papa from "papaparse";
 import { applicantWhere } from "@/lib/applicant-filters";
-import { getAdmin } from "@/lib/auth";
+import { getSessionUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { parseReasons } from "@/lib/eligibility";
 
@@ -8,10 +8,11 @@ import { parseReasons } from "@/lib/eligibility";
 const safe = (v: string) => (/^[=+\-@\t\r]/.test(v) ? `'${v}` : v);
 
 export async function GET(req: Request) {
-  if (!(await getAdmin())) return new Response("Unauthorized", { status: 401 });
+  const user = await getSessionUser();
+  if (!user || user.role !== "ADMIN" || !user.organizationId) return new Response("Unauthorized", { status: 401 });
   const sp = Object.fromEntries(new URL(req.url).searchParams);
   const checks = await db.eligibilityCheck.findMany({
-    where: applicantWhere(sp),
+    where: applicantWhere(user.organizationId, sp),
     orderBy: { createdAt: "desc" },
     take: 50_000,
     include: { program: { select: { name: true, category: true } } },

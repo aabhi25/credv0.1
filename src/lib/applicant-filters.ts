@@ -2,8 +2,9 @@ import type { Prisma } from "@prisma/client";
 
 export type ApplicantFilters = { program?: string; status?: string; q?: string };
 
-export function applicantWhere(f: ApplicantFilters): Prisma.EligibilityCheckWhereInput {
-  const where: Prisma.EligibilityCheckWhereInput = {};
+/** Always scoped to one organization, so admins only ever see their own applicants. */
+export function applicantWhere(organizationId: string, f: ApplicantFilters): Prisma.EligibilityCheckWhereInput {
+  const where: Prisma.EligibilityCheckWhereInput = { program: { organizationId } };
   if (f.program) where.programId = f.program;
   if (f.status && ["APPROVED", "DECLINED", "ERROR"].includes(f.status)) where.status = f.status;
   const q = f.q?.trim();

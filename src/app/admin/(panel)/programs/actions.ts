@@ -14,7 +14,7 @@ export async function saveProgram(
   _prev: ProgramFormState,
   formData: FormData,
 ): Promise<ProgramFormState> {
-  await requireAdmin();
+  const { organizationId } = await requireAdmin();
   const parsed = programSchema.safeParse({
     ...Object.fromEntries(formData),
     active: formData.get("active") === "on",
@@ -29,18 +29,19 @@ export async function saveProgram(
   if (clash && clash.id !== id) return { errors: { slug: "Another program already uses this link" } };
 
   if (id) {
-    await db.program.update({ where: { id }, data: parsed.data });
+    const { count } = await db.program.updateMany({ where: { id, organizationId }, data: parsed.data });
+    if (!count) return { errors: { name: "Program not found" } };
     revalidatePath("/admin", "layout");
     return { saved: true };
   }
-  const created = await db.program.create({ data: parsed.data });
+  const created = await db.program.create({ data: { ...parsed.data, organizationId } });
   revalidatePath("/admin", "layout");
   redirect(`/admin/programs/${created.id}`);
 }
 
 export async function deleteProgram(id: string) {
-  await requireAdmin();
-  await db.program.delete({ where: { id } });
+  const { organizationId } = await requireAdmin();
+  await db.program.deleteMany({ where: { id, organizationId } });
   revalidatePath("/admin", "layout");
   redirect("/admin/programs");
 }
@@ -51,11 +52,11 @@ export type BulkResult = { row: number; name: string; status: "APPROVED" | "DECL
 const MAX_BULK_ROWS = 500;
 
 export async function runBulkCheck(programId: string, rows: BulkRow[]): Promise<{ results: BulkResult[]; error?: string }> {
-  await requireAdmin();
+  const { organizationId } = await requireAdmin();
   if (!Array.isArray(rows) || rows.length === 0) return { results: [], error: "The file has no rows" };
   if (rows.length > MAX_BULK_ROWS) return { results: [], error: `Upload at most ${MAX_BULK_ROWS} rows at a time` };
 
-  const program = await db.program.findUnique({ where: { id: programId } });
+  const program = await db.program.findFirst({ where: { id: programId, organizationId } });
   if (!program) return { results: [], error: "Program not found" };
 
   const results: BulkResult[] = new Array(rows.length);

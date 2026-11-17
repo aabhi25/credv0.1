@@ -2,6 +2,7 @@
 
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { homeFor } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { verifyPassword } from "@/lib/password";
 import { rateLimit } from "@/lib/rate-limit";
@@ -15,13 +16,17 @@ export async function login(_prev: { error?: string }, formData: FormData): Prom
   const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
   if (!rateLimit(`login:${ip}`, 10, 15 * 60_000)) return { error: "Too many attempts. Try again later." };
 
-  const admin = await db.adminUser.findUnique({ where: { email } });
-  if (!admin || !(await verifyPassword(password, admin.passwordHash))) {
-    return { error: "Incorrect email or password" };
+  const user = await db.adminUser.findUnique({ where: { email }, include: { organization: true } });
+  if (!user || !(await verifyPassword(password, user.passwordHash))) {
+    return { error: "Incorrect email/username or password" };
+  }
+  if (!user.active || (user.role === "ADMIN" && !user.organization?.active)) {
+    return { error: "This account is disabled. Contact your administrator." };
   }
 
-  (await cookies()).set(SESSION_COOKIE, await createSessionToken(admin.id), sessionCookieOptions);
-  redirect("/admin");
+  await db.adminUser.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+  (await cookies()).set(SESSION_COOKIE, await createSessionToken(user.id, user.sessionVersion), sessionCookieOptions);
+  redirect(homeFor(user.role));
 }
 
 export async function logout() {

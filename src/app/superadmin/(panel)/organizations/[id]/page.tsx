@@ -1,0 +1,107 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { Card, CardHeader, Pill } from "@/components/ui";
+import { requireSuperadmin } from "@/lib/auth";
+import { db } from "@/lib/db";
+import { getBaseUrl } from "@/lib/url";
+import { CreateUserForm, OrganizationStatusButton, RenameOrganizationForm, UserRow } from "../../forms";
+
+export const dynamic = "force-dynamic";
+
+export default async function OrganizationPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireSuperadmin();
+  const { id } = await params;
+  const [org, baseUrl] = await Promise.all([
+    db.organization.findUnique({
+      where: { id },
+      include: {
+        users: { orderBy: { createdAt: "asc" } },
+        programs: { orderBy: { createdAt: "asc" }, include: { _count: { select: { checks: true } } } },
+      },
+    }),
+    getBaseUrl(),
+  ]);
+  if (!org) notFound();
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <Link href="/superadmin" className="text-sm text-slate-500 hover:text-navy-900">
+            ← Organizations
+          </Link>
+          <div className="mt-2 flex items-center gap-3">
+            <h1 className="text-2xl font-semibold text-navy-900">{org.name}</h1>
+            <span
+              className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset ${
+                org.active ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20" : "bg-slate-100 text-slate-600 ring-slate-300"
+              }`}
+            >
+              {org.active ? "Active" : "Disabled"}
+            </span>
+          </div>
+        </div>
+        <OrganizationStatusButton orgId={org.id} active={org.active} name={org.name} />
+      </div>
+
+      {!org.active && (
+        <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
+          This organization is disabled. Its admins can&apos;t sign in and its eligibility links show as inactive.
+        </div>
+      )}
+
+      <Card className="p-6">
+        <RenameOrganizationForm orgId={org.id} name={org.name} />
+      </Card>
+
+      <div className="grid gap-6 lg:grid-cols-5">
+        <Card className="overflow-hidden lg:col-span-3">
+          <CardHeader title="Admin accounts" subtitle="Edit email, reset password, or disable access" />
+          {org.users.length === 0 ? (
+            <p className="px-6 py-10 text-center text-sm text-slate-500">No admins yet.</p>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {org.users.map((u) => (
+                <UserRow key={u.id} user={u} />
+              ))}
+            </ul>
+          )}
+        </Card>
+        <Card className="lg:col-span-2">
+          <CardHeader title="Add admin" subtitle={`Another login for ${org.name}`} />
+          <div className="p-6">
+            <CreateUserForm orgId={org.id} label="Create admin" />
+          </div>
+        </Card>
+      </div>
+
+      <Card className="overflow-hidden">
+        <CardHeader title="Programs" subtitle="Managed by this organization's admins" />
+        {org.programs.length === 0 ? (
+          <p className="px-6 py-10 text-center text-sm text-slate-500">No programs yet.</p>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {org.programs.map((p) => (
+              <li key={p.id} className="flex flex-wrap items-center justify-between gap-3 px-6 py-3 text-sm">
+                <div>
+                  <span className="font-medium text-slate-900">{p.name}</span>
+                  <span className="ml-2 text-xs text-slate-500">{p.category}</span>
+                  <div className="font-mono text-xs text-slate-400">
+                    {baseUrl}/check/{p.slug}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Pill>
+                    {p.bureau} · {p.apiMode}
+                  </Pill>
+                  <span className="text-xs tabular-nums text-slate-500">{p._count.checks} checks</span>
+                  {!p.active && <span className="text-xs text-amber-700">Paused</span>}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+    </div>
+  );
+}

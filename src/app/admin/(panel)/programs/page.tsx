@@ -11,9 +11,9 @@ import { getBaseUrl } from "@/lib/url";
 export const dynamic = "force-dynamic";
 
 export default async function ProgramsPage() {
-  await requireAdmin();
+  const { organizationId } = await requireAdmin();
   const [programs, baseUrl] = await Promise.all([
-    db.program.findMany({ orderBy: { createdAt: "asc" }, include: { _count: { select: { checks: true } } } }),
+    db.program.findMany({ where: { organizationId }, orderBy: { createdAt: "asc" }, include: { _count: { select: { checks: true } } } }),
     getBaseUrl(),
   ]);
 

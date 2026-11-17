@@ -8,8 +8,8 @@ import { CheckForm } from "./CheckForm";
 type Props = { params: Promise<{ slug: string }> };
 
 async function getProgram(slug: string) {
-  const program = await db.program.findUnique({ where: { slug } });
-  return program?.active ? program : null;
+  const program = await db.program.findUnique({ where: { slug }, include: { organization: { select: { active: true } } } });
+  return program?.active && program.organization.active ? program : null;
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {

@@ -9,19 +9,23 @@ export const dynamic = "force-dynamic";
 
 async function toggleBureau(formData: FormData) {
   "use server";
-  await requireAdmin();
+  const { organizationId } = await requireAdmin();
   const bureau = String(formData.get("bureau"));
   if (!BUREAUS.includes(bureau as BureauCode)) return;
   const enabled = formData.get("enabled") === "true";
-  await db.bureauSetting.upsert({ where: { bureau }, update: { enabled }, create: { bureau, enabled } });
+  await db.bureauSetting.upsert({
+    where: { organizationId_bureau: { organizationId, bureau } },
+    update: { enabled },
+    create: { organizationId, bureau, enabled },
+  });
   revalidatePath("/admin/bureaus");
 }
 
 export default async function BureausPage() {
-  await requireAdmin();
+  const { organizationId } = await requireAdmin();
   const [settings, usage] = await Promise.all([
-    db.bureauSetting.findMany(),
-    db.program.groupBy({ by: ["bureau"], _count: true }),
+    db.bureauSetting.findMany({ where: { organizationId } }),
+    db.program.groupBy({ by: ["bureau"], where: { organizationId }, _count: true }),
   ]);
 
   return (

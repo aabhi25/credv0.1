@@ -34,8 +34,8 @@ export async function checkEligibility(slug: string, _prev: CheckState, formData
     return { kind: "unavailable", message: "Too many attempts. Please wait a minute and try again." };
   }
 
-  const program = await db.program.findUnique({ where: { slug } });
-  if (!program || !program.active) {
+  const program = await db.program.findUnique({ where: { slug }, include: { organization: { select: { active: true } } } });
+  if (!program || !program.active || !program.organization.active) {
     return { kind: "unavailable", message: "This eligibility link is no longer active." };
   }
 

@@ -26,14 +26,14 @@ export default function LoginPage() {
       <div className="flex items-center justify-center px-6">
         <form action={action} className="w-full max-w-sm space-y-5">
           <div>
-            <h2 className="text-2xl font-semibold text-navy-900">Admin sign in</h2>
-            <p className="mt-1 text-sm text-slate-500">Manage programs, bureaus and applicants.</p>
+            <h2 className="text-2xl font-semibold text-navy-900">Sign in</h2>
+            <p className="mt-1 text-sm text-slate-500">For organization admins and platform superadmins.</p>
           </div>
           {state.error && (
             <div className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">{state.error}</div>
           )}
-          <Field label="Email">
-            <input name="email" type="email" autoComplete="username" required className={inputClass} />
+          <Field label="Email or username">
+            <input name="email" type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} required className={inputClass} />
           </Field>
           <Field label="Password">
             <input name="password" type="password" autoComplete="current-password" required className={inputClass} />

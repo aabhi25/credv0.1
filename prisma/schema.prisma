@@ -7,26 +7,51 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model AdminUser {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  name         String
-  passwordHash String
-  createdAt    DateTime @default(now())
+// A customer of the platform, e.g. an NBFC. All programs and applicants belong to one.
+model Organization {
+  id        String          @id @default(cuid())
+  name      String
+  active    Boolean         @default(true)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  users     AdminUser[]
+  programs  Program[]
+  bureaus   BureauSetting[]
 }
 
-// Global settings per credit bureau. Credentials live in env vars, never in the DB.
+model AdminUser {
+  id             String        @id @default(cuid())
+  email          String        @unique
+  name           String
+  passwordHash   String
+  role           String        @default("ADMIN") // SUPERADMIN | ADMIN
+  organizationId String? // null for superadmins
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  active         Boolean       @default(true)
+  // Bumped on password reset or disable, which signs the user out everywhere.
+  sessionVersion Int           @default(0)
+  lastLoginAt    DateTime?
+  createdAt      DateTime      @default(now())
+}
+
+// Per-organization bureau switch. Credentials live in env vars, never in the DB.
 model BureauSetting {
-  id        String   @id @default(cuid())
-  bureau    String   @unique // EQUIFAX | CIBIL | CRIF | EXPERIAN
-  enabled   Boolean  @default(true)
-  updatedAt DateTime @updatedAt
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bureau         String // EQUIFAX | CIBIL | CRIF | EXPERIAN
+  enabled        Boolean      @default(true)
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, bureau])
 }
 
 // A rule engine. Each program has its own criteria, bureau and shareable link.
 model Program {
-  id            String   @id @default(cuid())
-  name          String
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
   slug          String   @unique
   category      String // e.g. Education, Consumer Brands
   description   String   @default("")
@@ -42,6 +67,8 @@ model Program {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   checks        EligibilityCheck[]
+
+  @@index([organizationId])
 }
 
 model EligibilityCheck {

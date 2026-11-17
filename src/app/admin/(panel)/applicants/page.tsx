@@ -14,13 +14,13 @@ const PAGE_SIZE = 50;
 type SearchParams = Promise<{ program?: string; status?: string; q?: string; page?: string }>;
 
 export default async function ApplicantsPage({ searchParams }: { searchParams: SearchParams }) {
-  await requireAdmin();
+  const { organizationId } = await requireAdmin();
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.page) || 1);
-  const where = applicantWhere(sp);
+  const where = applicantWhere(organizationId, sp);
 
   const [programs, total, checks, eligibleCount] = await Promise.all([
-    db.program.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    db.program.findMany({ where: { organizationId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     db.eligibilityCheck.count({ where }),
     db.eligibilityCheck.findMany({
       where,

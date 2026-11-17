@@ -3,7 +3,7 @@
 export const SESSION_COOKIE = "pa_session";
 const MAX_AGE_SECONDS = 60 * 60 * 12;
 
-type SessionPayload = { uid: string; exp: number };
+type SessionPayload = { uid: string; ver: number; exp: number };
 
 const encoder = new TextEncoder();
 
@@ -37,8 +37,8 @@ async function hmacKey() {
   );
 }
 
-export async function createSessionToken(uid: string): Promise<string> {
-  const payload: SessionPayload = { uid, exp: Math.floor(Date.now() / 1000) + MAX_AGE_SECONDS };
+export async function createSessionToken(uid: string, ver: number): Promise<string> {
+  const payload: SessionPayload = { uid, ver, exp: Math.floor(Date.now() / 1000) + MAX_AGE_SECONDS };
   const body = toBase64Url(encoder.encode(JSON.stringify(payload)));
   const sig = await crypto.subtle.sign("HMAC", await hmacKey(), encoder.encode(body));
   return `${body}.${toBase64Url(new Uint8Array(sig))}`;

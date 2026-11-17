@@ -10,7 +10,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
     <div className="min-h-screen bg-slate-50">
       <header className="sticky top-0 z-20 bg-navy-900 shadow-sm">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-6 px-4 py-4 sm:px-6">
-          <Logo />
+          <Logo subtitle={admin.organization.name} />
           <div className="flex items-center gap-4">
             <span className="hidden text-sm text-navy-200 sm:inline">{admin.email}</span>
             <form action={logout}>
