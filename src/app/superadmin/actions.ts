@@ -4,10 +4,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireSuperadmin } from "@/lib/auth";
+import { BureauError, getBureauAdapter } from "@/lib/bureaus";
+import { INQUIRY_PURPOSES } from "@/lib/bureaus/codes";
 import { BUREAUS, CREDENTIAL_FIELDS, INTEGRATED_BUREAUS, type BureauCode } from "@/lib/bureaus/types";
 import { db } from "@/lib/db";
+import { loadBureauCredentials } from "@/lib/org-bureaus";
 import { hashPassword } from "@/lib/password";
 import { decryptJson, encryptJson } from "@/lib/secrets";
+import { applicantSchema, parseDob } from "@/lib/validation";
 
 export type FormState = { errors?: Record<string, string>; ok?: string };
 
@@ -194,4 +198,82 @@ export async function removeBureauCredentials(orgId: string, bureau: string) {
   await db.bureauCredential.deleteMany({ where: { organizationId: orgId, bureau } });
   revalidatePath("/superadmin", "layout");
   revalidatePath("/admin", "layout");
+}
+
+export type BureauTestResult = {
+  ok: boolean;
+  message: string;
+  errors?: Record<string, string>;
+  report?: { hit: boolean; score: number | null; existingEmi: number; defaults: number; bureauRef: string | null };
+};
+
+async function recordTest(orgId: string, bureau: string, ok: boolean, message: string) {
+  await db.bureauCredential.updateMany({
+    where: { organizationId: orgId, bureau },
+    data: { lastTestedAt: new Date(), lastTestOk: ok, lastTestMessage: message.slice(0, 500) },
+  });
+  revalidatePath("/superadmin", "layout");
+}
+
+/** Checks the saved credentials without pulling a credit report. */
+export async function testBureauConnection(orgId: string, bureau: string): Promise<BureauTestResult> {
+  await requireSuperadmin();
+  const code = bureau as BureauCode;
+  const creds = await loadBureauCredentials(orgId, code);
+  if (!creds) return { ok: false, message: "No credentials are saved for this bureau." };
+  const adapter = getBureauAdapter(code, creds);
+  if (!adapter.probe) return { ok: false, message: "A quick check isn't available for this bureau; run a test enquiry." };
+  const result = await adapter.probe();
+  await recordTest(orgId, bureau, result.ok, result.message);
+  return { ok: result.ok, message: result.message };
+}
+
+const testApplicantSchema = applicantSchema.omit({ monthlyIncome: true });
+
+/**
+ * Pulls a real report for a test applicant (meant for the bureau's UAT test data).
+ * Nothing is saved as an applicant; only the pass/fail result is recorded on the credentials.
+ */
+export async function runBureauTestEnquiry(
+  orgId: string,
+  bureau: string,
+  _prev: BureauTestResult | null,
+  formData: FormData,
+): Promise<BureauTestResult> {
+  await requireSuperadmin();
+  const code = bureau as BureauCode;
+  const parsed = testApplicantSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    const errors: Record<string, string> = {};
+    for (const issue of parsed.error.issues) errors[String(issue.path[0])] ??= issue.message;
+    return { ok: false, message: "Check the highlighted fields.", errors };
+  }
+  const purpose = String(formData.get("inquiryPurpose") ?? "05");
+  const creds = await loadBureauCredentials(orgId, code);
+  if (!creds) return { ok: false, message: "No credentials are saved for this bureau." };
+
+  const a = parsed.data;
+  try {
+    const report = await getBureauAdapter(code, creds).fetchReport({
+      name: a.name,
+      pan: a.pan,
+      mobile: a.mobile,
+      dob: parseDob(a.dob)!,
+      address: a.address,
+      state: a.state,
+      pincode: a.pincode,
+      inquiryPurpose: INQUIRY_PURPOSES.some((p) => p.code === purpose) ? purpose : "05",
+      reference: `credcap-test-${Date.now()}`,
+    });
+    const message = report.hit
+      ? `Test enquiry succeeded: report ${report.bureauRef ?? "received"}${report.score !== null ? `, score ${report.score}` : ""}.`
+      : "Test enquiry succeeded: Equifax has no credit file for this applicant.";
+    await recordTest(orgId, bureau, true, message);
+    return { ok: true, message, report };
+  } catch (err) {
+    const message = err instanceof BureauError ? err.message : "The test enquiry failed unexpectedly.";
+    if (!(err instanceof BureauError)) console.error("Bureau test enquiry failed", err);
+    await recordTest(orgId, bureau, false, message);
+    return { ok: false, message };
+  }
 }

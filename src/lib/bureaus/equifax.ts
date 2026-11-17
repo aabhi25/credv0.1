@@ -1,4 +1,4 @@
-import { BureauError, type BureauAdapter, type BureauReport, type BureauRequest } from "./types";
+import { BureauError, type BureauAdapter, type BureauReport, type BureauRequest, type ProbeResult } from "./types";
 
 // Equifax India "IDCCR" consolidated credit report, REST/JSON over HTTPS.
 // Spec: IDCCR Bureau System-to-System External Interface Specification, June 2025.
@@ -13,6 +13,7 @@ export type EquifaxCredentials = {
 };
 
 const TIMEOUT_MS = 30_000;
+const PROBE_TIMEOUT_MS = 15_000;
 
 // Payment / account status codes (spec Appendix I) we count as a serious delinquency ("default").
 const SEVERE_DPD = new Set(["90+", "120+", "180+", "360+", "540+", "720+"]);
@@ -166,32 +167,97 @@ export function parseEquifaxResponse(body: unknown): BureauReport {
   };
 }
 
+// Login / account problems (spec error list). Anything else on a blank enquiry means the login got through.
+const AUTH_ERRORS = new Set([
+  "E0001", "E0002", "E0005", "E0007", "E0008", "E0010", "E0013", "E0019", "E0021", "E0022", "E0023",
+  "E0024", "E0025", "E0026", "E0027", "E0028", "E0074", "E0075", "E0076",
+]);
+const UNAVAILABLE_ERRORS = new Set(["E0029", "E0030", "E0046"]);
+
+/** A deliberately blank enquiry: Equifax can check the login but has nothing to pull a report for. */
+export function buildEquifaxProbeRequest(creds: Omit<EquifaxCredentials, "endpointUrl">) {
+  const full = buildEquifaxRequest(creds, {
+    name: "",
+    pan: "",
+    mobile: "",
+    dob: new Date(0),
+    address: "",
+    state: "",
+    pincode: "",
+    inquiryPurpose: "05",
+    reference: "credcap-connection-test",
+  });
+  return { RequestHeader: full.RequestHeader, RequestBody: { InquiryPurpose: "05" }, Score: full.Score };
+}
+
+export function classifyProbeResponse(body: unknown): ProbeResult {
+  const root = obj(body);
+  const ccr = obj(root.CCRResponse);
+  const error = firstError(root.Error, ccr.Error, ...arr(ccr.CIRReportDataLst).map((r) => r.Error));
+  if (!error) return { ok: true, message: "Connected, and Equifax accepted the request." };
+  const detail = `${error.code}${error.msg ? `: ${error.msg}` : ""}`;
+  if (error.code === "E0008") {
+    return { ok: false, code: error.code, message: `Equifax rejected this server's IP address (${detail}). Ask Equifax to allow-list it.` };
+  }
+  if (AUTH_ERRORS.has(error.code)) return { ok: false, code: error.code, message: `Equifax rejected the login (${detail}).` };
+  if (UNAVAILABLE_ERRORS.has(error.code)) {
+    return { ok: false, code: error.code, message: `Equifax is temporarily unavailable (${detail}). Try again later.` };
+  }
+  return {
+    ok: true,
+    code: error.code,
+    message: `Connected. Equifax didn't reject the login; it refused the blank test enquiry (${detail}), as expected. No credit report was pulled. Run a test enquiry to fully confirm.`,
+  };
+}
+
+async function post(endpointUrl: string, body: unknown, timeoutMs: number) {
+  const host = (() => {
+    try {
+      return new URL(endpointUrl).host;
+    } catch {
+      return endpointUrl;
+    }
+  })();
+  let res: Response;
+  try {
+    res = await fetch(endpointUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+      cache: "no-store",
+    });
+  } catch (err) {
+    const timedOut = err instanceof Error && err.name === "TimeoutError";
+    throw new BureauError(
+      timedOut
+        ? `Couldn't connect to ${host} within ${timeoutMs / 1000} seconds. This usually means Equifax hasn't allow-listed this server's IP address.`
+        : `Couldn't connect to ${host}. Check the API address.`,
+      "NETWORK",
+    );
+  }
+  if (!res.ok) throw new BureauError(`Equifax returned HTTP ${res.status}`, `HTTP_${res.status}`);
+  try {
+    return (await res.json()) as unknown;
+  } catch {
+    throw new BureauError("Equifax returned a response that isn't valid JSON", "BAD_RESPONSE");
+  }
+}
+
 export function createEquifaxAdapter(creds: EquifaxCredentials): BureauAdapter {
+  const { endpointUrl, ...auth } = creds;
   return {
     code: "EQUIFAX",
     async fetchReport(req) {
-      const { endpointUrl, ...auth } = creds;
-      let res: Response;
+      return parseEquifaxResponse(await post(endpointUrl, buildEquifaxRequest(auth, req), TIMEOUT_MS));
+    },
+    async probe() {
       try {
-        res = await fetch(endpointUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Accept: "application/json" },
-          body: JSON.stringify(buildEquifaxRequest(auth, req)),
-          signal: AbortSignal.timeout(TIMEOUT_MS),
-          cache: "no-store",
-        });
+        return classifyProbeResponse(await post(endpointUrl, buildEquifaxProbeRequest(auth), PROBE_TIMEOUT_MS));
       } catch (err) {
-        const timedOut = err instanceof Error && err.name === "TimeoutError";
-        throw new BureauError(timedOut ? "Equifax did not respond within 30 seconds" : "Could not reach Equifax", "NETWORK");
+        if (err instanceof BureauError) return { ok: false, code: err.code, message: err.message };
+        throw err;
       }
-      if (!res.ok) throw new BureauError(`Equifax returned HTTP ${res.status}`, `HTTP_${res.status}`);
-      let body: unknown;
-      try {
-        body = await res.json();
-      } catch {
-        throw new BureauError("Equifax returned a response that isn't valid JSON", "BAD_RESPONSE");
-      }
-      return parseEquifaxResponse(body);
     },
   };
 }

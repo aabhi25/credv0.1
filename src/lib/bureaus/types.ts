@@ -41,9 +41,14 @@ export type BureauReport = {
   bureauRef: string | null;
 };
 
+/** Result of checking saved credentials without pulling a credit report. */
+export type ProbeResult = { ok: boolean; message: string; code?: string };
+
 export interface BureauAdapter {
   code: BureauCode;
   fetchReport(req: BureauRequest): Promise<BureauReport>;
+  /** Checks connectivity and login without pulling a report, where the bureau allows it. */
+  probe?(): Promise<ProbeResult>;
 }
 
 /**

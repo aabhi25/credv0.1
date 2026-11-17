@@ -22,7 +22,9 @@ export default async function OrganizationPage({ params }: { params: Promise<{ i
       include: {
         users: { orderBy: { createdAt: "asc" } },
         bureaus: true,
-        bureauCredentials: { select: { bureau: true, hint: true, endpointUrl: true, updatedAt: true } },
+        bureauCredentials: {
+          select: { bureau: true, hint: true, endpointUrl: true, updatedAt: true, lastTestedAt: true, lastTestOk: true, lastTestMessage: true },
+        },
         programs: { orderBy: { createdAt: "asc" }, include: { _count: { select: { checks: true } } } },
       },
     }),

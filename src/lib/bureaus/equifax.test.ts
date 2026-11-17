@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildEquifaxRequest, parseEquifaxResponse } from "./equifax";
+import { buildEquifaxProbeRequest, buildEquifaxRequest, classifyProbeResponse, parseEquifaxResponse } from "./equifax";
 import { BureauError, type BureauRequest } from "./types";
 
 // Fixtures are synthetic but follow the structure of Equifax's IDCCR sample response.
@@ -121,5 +121,33 @@ describe("parseEquifaxResponse", () => {
         }),
       (err: unknown) => err instanceof BureauError && err.code === "E0005" && /Incorrect user or password/.test(err.message),
     );
+  });
+});
+
+describe("connection test", () => {
+  const fail = (code: string, msg: string) => ({ InquiryResponseHeader: { SuccessCode: "0" }, Error: [{ ErrorCode: code, ErrorMsg: msg }] });
+
+  it("sends credentials but no applicant details", () => {
+    const body = buildEquifaxProbeRequest(creds);
+    assert.equal(body.RequestHeader.UserId, "user");
+    assert.deepEqual(body.RequestBody, { InquiryPurpose: "05" });
+  });
+
+  it("reports rejected logins as failures", () => {
+    const result = classifyProbeResponse(fail("E0005", "Incorrect user or password."));
+    assert.equal(result.ok, false);
+    assert.match(result.message, /rejected the login/);
+  });
+
+  it("explains an IP rejection", () => {
+    const result = classifyProbeResponse(fail("E0008", "The IP is not valid for WS Inquiry."));
+    assert.equal(result.ok, false);
+    assert.match(result.message, /allow-list/);
+  });
+
+  it("treats a refused blank enquiry as a successful connection", () => {
+    const result = classifyProbeResponse(fail("E0048", "Address information not present."));
+    assert.equal(result.ok, true);
+    assert.equal(result.code, "E0048");
   });
 });

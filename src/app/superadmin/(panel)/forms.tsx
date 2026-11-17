@@ -1,22 +1,26 @@
 "use client";
 
 import { useActionState, useEffect, useState, useTransition, type FormEvent } from "react";
-import { KeyRound, Pencil, UserPlus } from "lucide-react";
+import { AlertTriangle, CircleCheck, CircleX, KeyRound, Loader2, Pencil, PlugZap, UserPlus } from "lucide-react";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { Modal } from "@/components/Modal";
 import { ActiveBadge, BureauStatusBadge, Button, Field, inputClass } from "@/components/ui";
+import { INQUIRY_PURPOSES, STATES } from "@/lib/bureaus/codes";
 import { CREDENTIAL_FIELDS, type BureauCode, type BureauStatus } from "@/lib/bureaus/types";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, formatInr } from "@/lib/format";
 import {
   createOrganization,
   createUser,
   removeBureauCredentials,
+  runBureauTestEnquiry,
   renameOrganization,
   saveBureauCredentials,
   setOrganizationActive,
   setOrganizationBureau,
   setUserActive,
+  testBureauConnection,
   updateUser,
+  type BureauTestResult,
 } from "../actions";
 
 /** Submits without React's automatic form reset, so typed values survive validation errors. */
@@ -351,13 +355,21 @@ type OrgBureau = {
   status: BureauStatus;
   programs: number;
   integrated: boolean;
-  credential: { hint: string; endpointUrl: string; updatedAt: Date } | null;
+  credential: {
+    hint: string;
+    endpointUrl: string;
+    updatedAt: Date;
+    lastTestedAt: Date | null;
+    lastTestOk: boolean | null;
+    lastTestMessage: string | null;
+  } | null;
 };
 
 /** Superadmin switches for which credit bureaus an organization may use, plus its API credentials. */
 export function OrganizationBureaus({ orgId, orgName, bureaus }: { orgId: string; orgName: string; bureaus: OrgBureau[] }) {
   const [pendingCode, setPendingCode] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  const [testing, setTesting] = useState<OrgBureau | null>(null);
   const [, startTransition] = useTransition();
   const confirm = useConfirm();
 
@@ -429,9 +441,12 @@ export function OrganizationBureaus({ orgId, orgName, bureaus }: { orgId: string
                 <div className="flex min-w-0 items-center gap-1.5 text-slate-600">
                   <KeyRound className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                   {b.credential ? (
-                    <span className="truncate">
-                      API credentials saved · {b.credential.hint} · {new URL(b.credential.endpointUrl).host} · updated{" "}
-                      {formatDateTime(b.credential.updatedAt)}
+                    <span className="min-w-0">
+                      <span className="block truncate">
+                        API credentials saved · {b.credential.hint} · {new URL(b.credential.endpointUrl).host} · updated{" "}
+                        {formatDateTime(b.credential.updatedAt)}
+                      </span>
+                      <LastTest credential={b.credential} />
                     </span>
                   ) : (
                     <span>No API credentials yet. Checks can&apos;t run until they&apos;re added.</span>
@@ -445,6 +460,15 @@ export function OrganizationBureaus({ orgId, orgName, bureaus }: { orgId: string
                   >
                     {editing === b.code ? "Close" : b.credential ? "Update" : "Add credentials"}
                   </button>
+                  {b.credential && (
+                    <button
+                      type="button"
+                      onClick={() => setTesting(b)}
+                      className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium text-navy-700 hover:bg-white"
+                    >
+                      <PlugZap className="h-3.5 w-3.5" /> Test
+                    </button>
+                  )}
                   {b.credential && (
                     <button
                       type="button"
@@ -464,7 +488,182 @@ export function OrganizationBureaus({ orgId, orgName, bureaus }: { orgId: string
           )}
         </li>
       ))}
+      {testing && (
+        <Modal
+          title={`Test ${testing.label} connection`}
+          description={`Uses ${orgName}'s saved credentials`}
+          onClose={() => setTesting(null)}
+        >
+          <BureauTestPanel orgId={orgId} bureau={testing.code as BureauCode} label={testing.label} />
+        </Modal>
+      )}
     </ul>
+  );
+}
+
+function LastTest({ credential }: { credential: NonNullable<OrgBureau["credential"]> }) {
+  if (!credential.lastTestedAt) return <span className="mt-0.5 block text-slate-400">Not tested yet</span>;
+  return (
+    <span
+      title={credential.lastTestMessage ?? undefined}
+      className={`mt-0.5 flex items-center gap-1 ${credential.lastTestOk ? "text-emerald-700" : "text-rose-700"}`}
+    >
+      {credential.lastTestOk ? <CircleCheck className="h-3.5 w-3.5" /> : <CircleX className="h-3.5 w-3.5" />}
+      Last test {credential.lastTestOk ? "passed" : "failed"} · {formatDateTime(credential.lastTestedAt)}
+    </span>
+  );
+}
+
+function TestOutcome({ result }: { result: BureauTestResult }) {
+  return (
+    <div
+      role="status"
+      className={`flex gap-2 rounded-lg px-3 py-2.5 text-sm ring-1 ${
+        result.ok ? "bg-emerald-50 text-emerald-900 ring-emerald-200" : "bg-rose-50 text-rose-900 ring-rose-200"
+      }`}
+    >
+      {result.ok ? <CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" /> : <CircleX className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />}
+      <span>{result.message}</span>
+    </div>
+  );
+}
+
+function BureauTestPanel({ orgId, bureau, label }: { orgId: string; bureau: BureauCode; label: string }) {
+  const [quick, setQuick] = useState<BureauTestResult | null>(null);
+  const [quickPending, startQuick] = useTransition();
+  const [enquiry, enquiryAction, enquiryPending] = useActionState(runBureauTestEnquiry.bind(null, orgId, bureau), null);
+  const onSubmit = useSubmit(enquiryAction);
+  const [showEnquiry, setShowEnquiry] = useState(false);
+  const e = enquiry?.errors ?? {};
+
+  return (
+    <div className="space-y-5">
+      <section className="space-y-3">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">Quick check</h3>
+          <p className="text-xs text-slate-500">
+            Connects to {label} and checks the login with a blank enquiry. No credit report is pulled.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={quickPending}
+          onClick={() => startQuick(async () => setQuick(await testBureauConnection(orgId, bureau)))}
+        >
+          {quickPending ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" /> Checking… (up to 15s)
+            </>
+          ) : (
+            <>
+              <PlugZap className="h-4 w-4" /> Run quick check
+            </>
+          )}
+        </Button>
+        {quick && <TestOutcome result={quick} />}
+      </section>
+
+      <section className="space-y-3 border-t border-slate-100 pt-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">Test enquiry</h3>
+            <p className="text-xs text-slate-500">Pulls a real report for one applicant to confirm everything end to end.</p>
+          </div>
+          {!showEnquiry && (
+            <button type="button" onClick={() => setShowEnquiry(true)} className="shrink-0 text-xs font-medium text-navy-700 hover:underline">
+              Set up
+            </button>
+          )}
+        </div>
+        {showEnquiry && (
+          <form onSubmit={onSubmit} className="space-y-3">
+            <p className="flex gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">
+              <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+              Use the bureau&apos;s UAT test applicants only. Against a production address this is a real credit enquiry on
+              a real person.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Name" error={e.name}>
+                <input name="name" className={inputClass} />
+              </Field>
+              <Field label="PAN" error={e.pan}>
+                <input name="pan" maxLength={10} className={`${inputClass} uppercase`} />
+              </Field>
+              <Field label="Date of birth" error={e.dob}>
+                <input name="dob" type="date" className={inputClass} />
+              </Field>
+              <Field label="Mobile" error={e.mobile}>
+                <input name="mobile" inputMode="numeric" maxLength={14} className={inputClass} />
+              </Field>
+            </div>
+            <Field label="Address" error={e.address}>
+              <input name="address" className={inputClass} />
+            </Field>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Field label="State" error={e.state}>
+                <select name="state" defaultValue="" className={inputClass}>
+                  <option value="" disabled>
+                    Select
+                  </option>
+                  {STATES.map((s) => (
+                    <option key={s.code} value={s.code}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="PIN code" error={e.pincode}>
+                <input name="pincode" inputMode="numeric" maxLength={6} className={inputClass} />
+              </Field>
+              <Field label="Loan type">
+                <select name="inquiryPurpose" defaultValue="05" className={inputClass}>
+                  {INQUIRY_PURPOSES.map((p) => (
+                    <option key={p.code} value={p.code}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+            <Button type="submit" disabled={enquiryPending}>
+              {enquiryPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Pulling report… (up to 30s)
+                </>
+              ) : (
+                "Run test enquiry"
+              )}
+            </Button>
+            {enquiry && !enquiry.errors && <TestOutcome result={enquiry} />}
+            {enquiry?.report && (
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 rounded-lg bg-slate-50 px-3 py-2.5 text-xs ring-1 ring-slate-200 sm:grid-cols-4">
+                <div>
+                  <dt className="text-slate-500">Credit file</dt>
+                  <dd className="font-semibold text-slate-900">{enquiry.report.hit ? "Found" : "None"}</dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Score</dt>
+                  <dd className="font-semibold text-slate-900">{enquiry.report.score ?? "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Monthly EMIs</dt>
+                  <dd className="font-semibold text-slate-900">{formatInr(enquiry.report.existingEmi)}</dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Defaults</dt>
+                  <dd className="font-semibold text-slate-900">{enquiry.report.defaults}</dd>
+                </div>
+                <div className="col-span-2 sm:col-span-4">
+                  <dt className="text-slate-500">Report number</dt>
+                  <dd className="font-mono text-slate-900">{enquiry.report.bureauRef ?? "—"}</dd>
+                </div>
+              </dl>
+            )}
+          </form>
+        )}
+      </section>
+    </div>
   );
 }
 

@@ -56,6 +56,9 @@ model BureauCredential {
   endpointUrl    String
   encrypted      String // encrypted JSON of the bureau's credential fields
   hint           String       @default("") // non-secret label shown in the UI, e.g. masked member number
+  lastTestedAt   DateTime?
+  lastTestOk     Boolean?
+  lastTestMessage String?
   updatedAt      DateTime     @updatedAt
 
   @@unique([organizationId, bureau])
