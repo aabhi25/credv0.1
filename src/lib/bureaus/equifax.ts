@@ -210,6 +210,23 @@ export function classifyProbeResponse(body: unknown): ProbeResult {
   };
 }
 
+/** Turns a failed fetch into an explanation an admin can act on. */
+export function describeNetworkError(err: unknown, host: string): string {
+  const cause = (err as { cause?: { code?: string } } | null)?.cause;
+  const code = cause?.code ?? "";
+  const name = err instanceof Error ? err.name : "";
+  if (name === "TimeoutError" || ["UND_ERR_CONNECT_TIMEOUT", "ETIMEDOUT", "UND_ERR_HEADERS_TIMEOUT"].includes(code)) {
+    return `${host} didn't answer. This usually means Equifax hasn't allow-listed this server's IP address yet.`;
+  }
+  if (code === "ENOTFOUND" || code === "EAI_AGAIN") return `${host} couldn't be found. Check the API address.`;
+  if (code === "ECONNREFUSED") return `${host} refused the connection. Check the API address and port.`;
+  if (code === "ECONNRESET" || code === "UND_ERR_SOCKET") {
+    return `${host} closed the connection. Equifax may be blocking this server's IP address.`;
+  }
+  if (/CERT|SSL|TLS|SELF_SIGNED/i.test(code)) return `Secure connection to ${host} failed (${code}).`;
+  return `Couldn't connect to ${host}${code ? ` (${code})` : ""}.`;
+}
+
 async function post(endpointUrl: string, body: unknown, timeoutMs: number) {
   const host = (() => {
     try {
@@ -228,13 +245,7 @@ async function post(endpointUrl: string, body: unknown, timeoutMs: number) {
       cache: "no-store",
     });
   } catch (err) {
-    const timedOut = err instanceof Error && err.name === "TimeoutError";
-    throw new BureauError(
-      timedOut
-        ? `Couldn't connect to ${host} within ${timeoutMs / 1000} seconds. This usually means Equifax hasn't allow-listed this server's IP address.`
-        : `Couldn't connect to ${host}. Check the API address.`,
-      "NETWORK",
-    );
+    throw new BureauError(describeNetworkError(err, host), "NETWORK");
   }
   if (!res.ok) throw new BureauError(`Equifax returned HTTP ${res.status}`, `HTTP_${res.status}`);
   try {

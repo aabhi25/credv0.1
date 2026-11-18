@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildEquifaxProbeRequest, buildEquifaxRequest, classifyProbeResponse, parseEquifaxResponse } from "./equifax";
+import { buildEquifaxProbeRequest, buildEquifaxRequest, classifyProbeResponse, describeNetworkError, parseEquifaxResponse } from "./equifax";
 import { BureauError, type BureauRequest } from "./types";
 
 // Fixtures are synthetic but follow the structure of Equifax's IDCCR sample response.
@@ -149,5 +149,18 @@ describe("connection test", () => {
     const result = classifyProbeResponse(fail("E0048", "Address information not present."));
     assert.equal(result.ok, true);
     assert.equal(result.code, "E0048");
+  });
+});
+
+describe("describeNetworkError", () => {
+  const fetchError = (code: string) => Object.assign(new TypeError("fetch failed"), { cause: { code } });
+
+  it("points to IP allow-listing when the connection times out", () => {
+    assert.match(describeNetworkError(fetchError("UND_ERR_CONNECT_TIMEOUT"), "x.example"), /allow-listed/);
+    assert.match(describeNetworkError(Object.assign(new Error("t"), { name: "TimeoutError" }), "x.example"), /allow-listed/);
+  });
+
+  it("flags a wrong address", () => {
+    assert.match(describeNetworkError(fetchError("ENOTFOUND"), "x.example"), /couldn't be found/);
   });
 });
