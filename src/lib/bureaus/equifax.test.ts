@@ -4,14 +4,17 @@ import {
   buildEquifaxProbeRequest,
   buildEquifaxRequest,
   buildTokenRequest,
+  classifyGatewayError,
   classifyProbeResponse,
+  DEFAULT_SCOPE,
   describeHttpError,
   describeNetworkError,
   parseEquifaxResponse,
 } from "./equifax";
 import { BureauError, type BureauRequest } from "./types";
 
-// Fixtures are synthetic but follow the structure of Equifax's IDCCR sample response.
+// Fixtures are synthetic but follow the structure of Equifax's IDCCR sample response and the
+// CIR 360 Report API spec.
 
 const creds = { customerId: "1", userId: "user", password: "secret", memberNumber: "MEMBER0001", securityCode: "ABC" };
 
@@ -46,7 +49,7 @@ describe("buildEquifaxRequest", () => {
     assert.deepEqual(body.RequestHeader.ProductCode, ["IDCCR"]);
     assert.equal(body.RequestBody.InquiryPurpose, "05");
     assert.equal(body.RequestBody.FirstName, "Asha Verma");
-    assert.equal(body.RequestBody.DOB, "1990-05-14");
+    assert.equal(body.RequestBody.DOB, "14-05-1990");
     assert.deepEqual(body.RequestBody.InquiryAddresses[0], {
       seq: "1",
       AddressType: ["H"],
@@ -173,22 +176,68 @@ describe("describeNetworkError", () => {
   });
 });
 
+describe("parseEquifaxResponse (CIR 360 API shape)", () => {
+  const cir360 = (reportData: Record<string, unknown>, hitCode: unknown = 10) => ({
+    InquiryResponseHeader: { ReportOrderNO: "55443322", SuccessCode: 1, HitCode: hitCode },
+    ReportData: reportData,
+  });
+
+  it("reads score, EMIs and defaults", () => {
+    const result = parseEquifaxResponse(
+      cir360({
+        AccountsSummary: { ConsolidateCreditSummary: { Retail: { InstallmentAmount: "8,100", NoOfWriteOffs: "0" } } },
+        Accounts: {
+          Retails: [
+            { Open: "Yes", InstallmentAmount: "8100", AccountStatus: "Standard", History48Months: [month("01-25", "000")] },
+            { Open: "No", AccountStatus: "Closed", History48Months: [month("03-22", "90+")] },
+          ],
+        },
+        ScoreDetails: [{ Type: "ERS", Version: "4.0", Value: "742" }],
+      }),
+    );
+    assert.deepEqual(result, { hit: true, score: 742, existingEmi: 8100, defaults: 1, bureauRef: "55443322" });
+  });
+
+  it("treats a numeric HitCode 0 as no credit file", () => {
+    assert.equal(parseEquifaxResponse(cir360({ ScoreDetails: [] }, 0)).hit, false);
+  });
+
+  it("raises errors reported inside ReportData", () => {
+    assert.throws(
+      () => parseEquifaxResponse(cir360({ Error: { efxErrorCode: "E0020", description: "Invalid DOB" } })),
+      (err: unknown) => err instanceof BureauError && err.code === "E0020" && /Invalid DOB/.test(err.message),
+    );
+  });
+});
+
 describe("OAuth", () => {
   it("requests a client-credentials token with HTTP Basic auth", () => {
     const req = buildTokenRequest({ clientId: "my-client", clientSecret: "s3cret" });
     assert.equal(req.headers.Authorization, `Basic ${Buffer.from("my-client:s3cret").toString("base64")}`);
     assert.equal(req.headers["Content-Type"], "application/x-www-form-urlencoded");
-    assert.equal(req.body, "grant_type=client_credentials");
+    assert.equal(new URLSearchParams(req.body).get("grant_type"), "client_credentials");
   });
 
-  it("adds a scope only when one is configured", () => {
+  it("asks for the CIR 360 scope unless another is configured", () => {
+    assert.equal(new URLSearchParams(buildTokenRequest({ clientId: "c", clientSecret: "s" }).body).get("scope"), DEFAULT_SCOPE);
     const req = buildTokenRequest({ clientId: "c", clientSecret: "s", scope: "cir.read" });
     assert.equal(new URLSearchParams(req.body).get("scope"), "cir.read");
   });
 
-  it("leaves member fields out of the request header when they aren't set", () => {
-    const body = buildEquifaxRequest({ memberNumber: "MEMBER0001" }, request);
-    assert.deepEqual(Object.keys(body.RequestHeader).sort(), ["CustRefField", "MemberNumber", "ProductCode"]);
+  it("sends the member login, and a product version only when set", () => {
+    const body = buildEquifaxRequest(creds, request);
+    assert.deepEqual(Object.keys(body.RequestHeader).sort(), [
+      "CustRefField", "CustomerId", "MemberNumber", "Password", "ProductCode", "SecurityCode", "UserId",
+    ]);
+    assert.equal(buildEquifaxRequest({ ...creds, productVersion: "1.0" }, request).RequestHeader.ProductVersion, "1.0");
+  });
+
+  it("treats a schema rejection of the blank test enquiry as connected", () => {
+    assert.equal(classifyGatewayError(new BureauError("Equifax returned HTTP 400 (400.01: Invalid JSON payload)", "HTTP_400"))?.ok, true);
+    const denied = classifyGatewayError(new BureauError("Equifax returned HTTP 401 (401.01: No product match found)", "HTTP_401"));
+    assert.equal(denied?.ok, false);
+    assert.match(denied!.message, /CIR Client Gateway/);
+    assert.equal(classifyGatewayError(new BureauError("Equifax returned HTTP 500", "HTTP_500")), null);
   });
 
   it("explains Equifax gateway and OAuth errors", () => {

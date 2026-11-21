@@ -58,8 +58,9 @@ To integrate a bureau, add an adapter to `INTEGRATIONS` in `src/lib/bureaus/inde
 
 - Connects through Equifax's **API gateway with OAuth 2** (client credentials). The superadmin enters, per
   organization: the report API address, the OAuth token URL, the client ID and the client secret (from Equifax's
-  developer portal). Scope and member fields (customer ID, user ID, password, member number, security code) are
-  optional and only sent if filled in.
+  developer portal), plus the member login (customer ID, user ID, password, member number, security code), which
+  the CIR 360 API requires in the request header. Scope defaults to `https://api.equifax.com/business/cir/v1`;
+  product version is optional. Spec: CIR360 Report API 1.0.0 (OpenAPI, from the developer portal).
   - Sandbox: token `https://api.sandbox.equifax.co.in/v2/oauth/token`, report
     `https://api.sandbox.equifax.co.in/business/cir/v1/cir360Report`
   - UAT: token `https://api.uat.equifax.co.in/v2/oauth/token`, report

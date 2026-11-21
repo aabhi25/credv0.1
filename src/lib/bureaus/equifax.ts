@@ -1,10 +1,11 @@
 import { BureauError, type BureauAdapter, type BureauReport, type BureauRequest, type ProbeResult } from "./types";
 
-// Equifax India "IDCCR" consolidated credit report, REST/JSON over HTTPS.
-// Spec: IDCCR Bureau System-to-System External Interface Specification, June 2025.
+// Equifax India CIR 360 credit report, REST/JSON over HTTPS.
+// Spec: CIR360 Report API 1.0.0 (OpenAPI, developer.equifax.in), with field details from the
+// IDCCR System-to-System Interface Specification, June 2025.
 // Connects through Equifax's API gateway (api.sandbox / api.uat / api.equifax.co.in): a
 // client-credentials token from the OAuth URL (client ID + secret via HTTP Basic) is sent as a
-// Bearer token with each request. Member fields, if given, also go in the request header.
+// Bearer token with each request. The member login also goes in the request header.
 
 export type EquifaxCredentials = {
   endpointUrl: string;
@@ -12,6 +13,7 @@ export type EquifaxCredentials = {
   clientId?: string;
   clientSecret?: string;
   scope?: string;
+  productVersion?: string;
   customerId?: string;
   userId?: string;
   password?: string;
@@ -19,7 +21,13 @@ export type EquifaxCredentials = {
   securityCode?: string;
 };
 
-type HeaderCredentials = Pick<EquifaxCredentials, "customerId" | "userId" | "password" | "memberNumber" | "securityCode">;
+type HeaderCredentials = Pick<
+  EquifaxCredentials,
+  "customerId" | "userId" | "password" | "memberNumber" | "securityCode" | "productVersion"
+>;
+
+/** OAuth scope for the CIR 360 API, used when none is configured. */
+export const DEFAULT_SCOPE = "https://api.equifax.com/business/cir/v1";
 
 const TIMEOUT_MS = 30_000;
 const PROBE_TIMEOUT_MS = 15_000;
@@ -59,21 +67,21 @@ function splitName(name: string) {
   return { FirstName: first.slice(0, 40), MiddleName: "", LastName: rest.join(" ").slice(0, 40) };
 }
 
-function ymd(d: Date) {
-  return d.toISOString().slice(0, 10);
+/** DD-MM-YYYY, as in the CIR 360 API spec (e.g. 31-12-1994). */
+function dmy(d: Date) {
+  const [y, m, day] = d.toISOString().slice(0, 10).split("-");
+  return `${day}-${m}-${y}`;
 }
 
-/** Member fields for the request header; empty ones are left out (they're optional). */
+/** The member login for the request header. ProductVersion is only sent if Equifax issued one. */
 function requestHeader(creds: HeaderCredentials, reference: string) {
-  const fields = {
-    CustomerId: creds.customerId,
-    UserId: creds.userId,
-    Password: creds.password,
-    MemberNumber: creds.memberNumber,
-    SecurityCode: creds.securityCode,
-  };
   return {
-    ...(Object.fromEntries(Object.entries(fields).filter(([, v]) => v)) as Partial<Record<keyof typeof fields, string>>),
+    CustomerId: creds.customerId ?? "",
+    UserId: creds.userId ?? "",
+    Password: creds.password ?? "",
+    MemberNumber: creds.memberNumber ?? "",
+    SecurityCode: creds.securityCode ?? "",
+    ...(creds.productVersion && { ProductVersion: creds.productVersion }),
     CustRefField: reference.slice(0, 50),
     ProductCode: ["IDCCR"],
   };
@@ -85,7 +93,7 @@ export function buildEquifaxRequest(creds: HeaderCredentials, req: BureauRequest
     RequestBody: {
       InquiryPurpose: req.inquiryPurpose,
       ...splitName(req.name),
-      DOB: ymd(req.dob),
+      DOB: dmy(req.dob),
       InquiryAddresses: [
         {
           seq: "1",
@@ -119,8 +127,8 @@ const num = (v: unknown) => {
 function firstError(...sources: unknown[]) {
   for (const source of sources) {
     for (const e of arr(source)) {
-      const code = str(e.ErrorCode);
-      const msg = str(e.ErrorMsg) || str(e.Details);
+      const code = str(e.ErrorCode) || str(e.efxErrorCode);
+      const msg = str(e.ErrorMsg) || str(e.Details) || str(e.description);
       if (code || msg) return { code, msg };
     }
   }
@@ -139,48 +147,83 @@ function isSevereAccount(account: Json) {
   );
 }
 
-export function parseEquifaxResponse(body: unknown): BureauReport {
-  const root = obj(body);
-  const header = obj(root.InquiryResponseHeader);
-  const ccr = obj(root.CCRResponse);
-  const reports = arr(ccr.CIRReportDataLst);
+type ReportParts = { data: Json; header: Json; summary: Json; accounts: Json[]; emi: number | null; writeOffs: number | null };
 
-  const error = firstError(root.Error, ccr.Error, ...reports.map((r) => r.Error));
-  if (error || str(header.SuccessCode) === "0" || str(ccr.Status) === "0") {
-    const code = error?.code || "UNKNOWN";
-    throw new BureauError(`Equifax error ${code}${error?.msg ? `: ${error.msg}` : ""}`, code);
-  }
+/** CIR 360 API shape: a single ReportData object next to InquiryResponseHeader. */
+function cir360Parts(root: Json): ReportParts | null {
+  if (!root.ReportData) return null;
+  const data = obj(root.ReportData);
+  const consolidated = obj(obj(data.AccountsSummary).ConsolidateCreditSummary);
+  const retail = obj(consolidated.Retail);
+  return {
+    data,
+    header: obj(root.InquiryResponseHeader),
+    summary: retail,
+    accounts: arr(obj(data.Accounts).Retails),
+    emi: num(retail.InstallmentAmount) ?? num(obj(consolidated.OverAll).TotalInstallmentAmount),
+    writeOffs: num(retail.NoOfWriteOffs),
+  };
+}
 
-  // The retail report is the one with a retail summary or retail (ERS) score.
+/** IDCCR shape: CCRResponse.CIRReportDataLst, one entry per report type; we want the retail one. */
+function idccrParts(root: Json): ReportParts | null {
+  const reports = arr(obj(root.CCRResponse).CIRReportDataLst);
   const retail =
     reports.find((r) => {
       const data = obj(r.CIRReportData);
       return data.RetailAccountsSummary || arr(data.ScoreDetails).some((s) => str(s.Type) === "ERS");
     }) ?? reports[0];
-  if (!retail) throw new BureauError("Equifax response had no report");
-
+  if (!retail) return null;
   const data = obj(retail.CIRReportData);
   const summary = obj(data.RetailAccountsSummary);
-  const accounts = arr(data.RetailAccountDetails);
-  const hitCode = str(obj(retail.InquiryResponseHeader).HitCode);
+  return {
+    data,
+    header: obj(retail.InquiryResponseHeader),
+    summary,
+    accounts: arr(data.RetailAccountDetails),
+    emi: num(summary.TotalMonthlyPaymentAmount),
+    writeOffs: num(summary.NoOfWriteOffs),
+  };
+}
 
-  const scoreEntry = arr(data.ScoreDetails).find((s) => str(s.Type) === "ERS") ?? arr(data.ScoreDetails)[0];
+export function parseEquifaxResponse(body: unknown): BureauReport {
+  const root = obj(body);
+  const header = obj(root.InquiryResponseHeader);
+  const ccr = obj(root.CCRResponse);
+
+  const error = firstError(
+    root.Error,
+    obj(root.ReportData).Error,
+    ccr.Error,
+    ...arr(ccr.CIRReportDataLst).map((r) => r.Error),
+  );
+  if (error || str(header.SuccessCode) === "0" || str(ccr.Status) === "0") {
+    const code = error?.code || "UNKNOWN";
+    throw new BureauError(`Equifax error ${code}${error?.msg ? `: ${error.msg}` : ""}`, code);
+  }
+
+  const parts = cir360Parts(root) ?? idccrParts(root);
+  if (!parts) throw new BureauError("Equifax response had no report");
+  const hitCode = str(parts.header.HitCode) || str(header.HitCode);
+
+  const scores = arr(parts.data.ScoreDetails);
+  const scoreEntry = scores.find((s) => str(s.Type) === "ERS") ?? scores[0];
   const rawScore = num(scoreEntry?.Value);
   const score = rawScore !== null && rawScore >= 300 && rawScore <= 900 ? rawScore : null;
 
-  const emiFromSummary = num(summary.TotalMonthlyPaymentAmount);
-  const emiFromAccounts = accounts
+  const emiFromAccounts = parts.accounts
     .filter((a) => str(a.Open).toLowerCase() === "yes")
     .reduce((sum, a) => sum + (num(a.InstallmentAmount) ?? 0), 0);
 
-  const severeAccounts = accounts.filter(isSevereAccount).length;
+  const severeAccounts = parts.accounts.filter(isSevereAccount).length;
 
   return {
-    hit: hitCode ? hitCode !== "00" : accounts.length > 0 || score !== null,
+    // HitCode 00 = no credit file; "0" too, since the CIR 360 API sends it as a number.
+    hit: hitCode ? !/^0+$/.test(hitCode) : parts.accounts.length > 0 || score !== null,
     score,
-    existingEmi: Math.round(emiFromSummary ?? emiFromAccounts),
-    defaults: Math.max(severeAccounts, num(summary.NoOfWriteOffs) ?? 0),
-    bureauRef: str(header.ReportOrderNO) || str(obj(retail.InquiryResponseHeader).ReportOrderNO) || null,
+    existingEmi: Math.round(parts.emi ?? emiFromAccounts),
+    defaults: Math.max(severeAccounts, parts.writeOffs ?? 0),
+    bureauRef: str(header.ReportOrderNO) || str(parts.header.ReportOrderNO) || null,
   };
 }
 
@@ -210,7 +253,12 @@ export function buildEquifaxProbeRequest(creds: HeaderCredentials) {
 export function classifyProbeResponse(body: unknown): ProbeResult {
   const root = obj(body);
   const ccr = obj(root.CCRResponse);
-  const error = firstError(root.Error, ccr.Error, ...arr(ccr.CIRReportDataLst).map((r) => r.Error));
+  const error = firstError(
+    root.Error,
+    obj(root.ReportData).Error,
+    ccr.Error,
+    ...arr(ccr.CIRReportDataLst).map((r) => r.Error),
+  );
   if (!error) return { ok: true, message: "Connected, and Equifax accepted the request." };
   const detail = `${error.code}${error.msg ? `: ${error.msg}` : ""}`;
   if (error.code === "E0008") {
@@ -225,6 +273,28 @@ export function classifyProbeResponse(body: unknown): ProbeResult {
     code: error.code,
     message: `Connected. Equifax didn't reject the login; it refused the blank test enquiry (${detail}), as expected. No credit report was pulled. Run a test enquiry to fully confirm.`,
   };
+}
+
+/**
+ * The gateway checks the request against its schema before Equifax does, so it may reject the
+ * blank test enquiry with HTTP 400. That still proves the token was accepted for this API.
+ */
+export function classifyGatewayError(err: BureauError): ProbeResult | null {
+  if (err.code === "HTTP_400") {
+    return {
+      ok: true,
+      code: err.code,
+      message: `Connected. The API accepted the token and refused the blank test enquiry (${err.message}), as expected. No credit report was pulled. Run a test enquiry to fully confirm.`,
+    };
+  }
+  if (err.code === "HTTP_401" || err.code === "HTTP_403") {
+    return {
+      ok: false,
+      code: err.code,
+      message: `The token was refused for the CIR 360 API (${err.message}). Check the app in Equifax's developer portal includes the CIR Client Gateway product.`,
+    };
+  }
+  return null;
 }
 
 /** Turns a failed fetch into an explanation an admin can act on. */
@@ -288,8 +358,7 @@ const tokenCache = (globalForTokens.equifaxTokens ??= new Map<string, CachedToke
 
 /** Basic-auth header for the client-credentials grant, as Equifax's token endpoint expects. */
 export function buildTokenRequest(creds: Pick<EquifaxCredentials, "clientId" | "clientSecret" | "scope">) {
-  const body = new URLSearchParams({ grant_type: "client_credentials" });
-  if (creds.scope) body.set("scope", creds.scope);
+  const body = new URLSearchParams({ grant_type: "client_credentials", scope: creds.scope || DEFAULT_SCOPE });
   return {
     method: "POST",
     headers: {
@@ -308,7 +377,7 @@ async function getAccessToken(creds: EquifaxCredentials, timeoutMs: number, forc
       "OAUTH_CONFIG",
     );
   }
-  const key = `${creds.tokenUrl}|${creds.clientId}|${creds.scope ?? ""}`;
+  const key = `${creds.tokenUrl}|${creds.clientId}|${creds.scope || DEFAULT_SCOPE}`;
   const cached = tokenCache.get(key);
   if (!forceNew && cached && cached.expiresAt > Date.now()) return cached.token;
 
@@ -358,8 +427,15 @@ export function createEquifaxAdapter(creds: EquifaxCredentials): BureauAdapter {
       try {
         // Getting a token proves the client ID and secret without touching any report.
         await getAccessToken(creds, PROBE_TIMEOUT_MS, true);
-        const result = classifyProbeResponse(await postReport(creds, buildEquifaxProbeRequest(creds), PROBE_TIMEOUT_MS));
-        return { ...result, message: `Signed in to Equifax (access token received). ${result.message}` };
+        const signedIn = "Signed in to Equifax (access token received).";
+        try {
+          const result = classifyProbeResponse(await postReport(creds, buildEquifaxProbeRequest(creds), PROBE_TIMEOUT_MS));
+          return { ...result, message: `${signedIn} ${result.message}` };
+        } catch (err) {
+          const probe = err instanceof BureauError ? classifyGatewayError(err) : null;
+          if (probe) return { ...probe, message: `${signedIn} ${probe.message}` };
+          throw err;
+        }
       } catch (err) {
         if (err instanceof BureauError) return { ok: false, code: err.code, message: err.message };
         throw err;
