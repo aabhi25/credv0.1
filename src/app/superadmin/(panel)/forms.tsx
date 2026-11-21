@@ -6,7 +6,7 @@ import { useConfirm } from "@/components/ConfirmDialog";
 import { Modal } from "@/components/Modal";
 import { ActiveBadge, BureauStatusBadge, Button, Field, inputClass } from "@/components/ui";
 import { INQUIRY_PURPOSES, STATES } from "@/lib/bureaus/codes";
-import { CREDENTIAL_FIELDS, ENDPOINT_PLACEHOLDERS, type BureauCode, type BureauStatus, type CredentialField } from "@/lib/bureaus/types";
+import { BUREAU_ENVIRONMENTS, CREDENTIAL_FIELDS, ENDPOINT_PLACEHOLDERS, type BureauCode, type BureauStatus, type CredentialField } from "@/lib/bureaus/types";
 import { formatDateTime, formatInr } from "@/lib/format";
 import {
   createOrganization,
@@ -717,7 +717,19 @@ function BureauCredentialsForm({
   const [state, action, pending] = useActionState(saveBureauCredentials.bind(null, orgId, bureau), {});
   const onSubmit = useSubmit(action);
   const fields = CREDENTIAL_FIELDS[bureau] ?? [];
-  const required = fields.filter((f) => !f.optional && f.key !== "scope");
+  const environments = BUREAU_ENVIRONMENTS[bureau] ?? [];
+  const urlKeys = new Set(Object.keys(environments[0]?.urls ?? {}));
+  const savedEndpoint = existing?.complete ? existing.endpointUrl : "";
+  // Pick the environment the saved address belongs to; new credentials start on the first (sandbox).
+  const [envKey, setEnvKey] = useState(() =>
+    environments.length === 0
+      ? "custom"
+      : savedEndpoint
+        ? (environments.find((env) => env.urls.endpointUrl === savedEndpoint)?.key ?? "custom")
+        : environments[0].key,
+  );
+  const env = environments.find((x) => x.key === envKey);
+  const required = fields.filter((f) => !f.optional && !(env && urlKeys.has(f.key)));
   const optional = fields.filter((f) => f.optional);
   const saved = new Set(existing?.savedKeys ?? []);
   const e = state.errors ?? {};
@@ -746,27 +758,54 @@ function BureauCredentialsForm({
         Use the API access Equifax issued to this organization (client ID and secret from Equifax&apos;s developer portal).
         Everything is stored encrypted and secrets are never shown again.
       </p>
-      <Field
-        label="Report API address"
-        error={e.endpointUrl}
-        hint={
-          existing && !existing.complete
-            ? `Replace the old address (${hostOf(existing.endpointUrl)}) with the sandbox, UAT or production address from Equifax`
-            : "Sandbox, UAT or production address from Equifax"
-        }
-      >
-        <input
-          name="endpointUrl"
-          defaultValue={existing?.complete ? existing.endpointUrl : ""}
-          placeholder={ENDPOINT_PLACEHOLDERS[bureau] ?? "https://"}
-          className={`${inputClass} font-mono`}
-        />
-      </Field>
+      {environments.length > 0 && (
+        <Field label="Environment" hint={env?.hint ?? "Enter the addresses Equifax gave you."}>
+          <select value={envKey} onChange={(ev) => setEnvKey(ev.target.value)} className={inputClass}>
+            {environments.map((x) => (
+              <option key={x.key} value={x.key}>
+                {x.label}
+              </option>
+            ))}
+            <option value="custom">Custom addresses</option>
+          </select>
+        </Field>
+      )}
+      {env ? (
+        <dl className="space-y-1 rounded-lg bg-white px-3 py-2 text-xs ring-1 ring-slate-200">
+          {Object.entries(env.urls).map(([key, url]) => (
+            <div key={key} className="flex min-w-0 flex-wrap gap-x-2">
+              <dt className="text-slate-500">{key === "endpointUrl" ? "Report API" : (fields.find((f) => f.key === key)?.label ?? key)}</dt>
+              <dd className="min-w-0 break-all font-mono text-slate-700">{url}</dd>
+              <input type="hidden" name={key} value={url} />
+            </div>
+          ))}
+          {(e.endpointUrl || [...urlKeys].some((k) => e[k])) && (
+            <p className="text-rose-600">{e.endpointUrl ?? [...urlKeys].map((k) => e[k]).find(Boolean)}</p>
+          )}
+        </dl>
+      ) : (
+        <Field
+          label="Report API address"
+          error={e.endpointUrl}
+          hint={
+            existing && !existing.complete
+              ? `Replace the old address (${hostOf(existing.endpointUrl)}) with the sandbox, UAT or production address from Equifax`
+              : "Sandbox, UAT or production address from Equifax"
+          }
+        >
+          <input
+            name="endpointUrl"
+            defaultValue={savedEndpoint}
+            placeholder={ENDPOINT_PLACEHOLDERS[bureau] ?? "https://"}
+            className={`${inputClass} font-mono`}
+          />
+        </Field>
+      )}
       <div className="grid gap-3 sm:grid-cols-2">{required.map((f) => (f.url ? <div key={f.key} className="sm:col-span-2">{input(f)}</div> : input(f)))}</div>
       {optional.length > 0 && (
         <details className="rounded-lg bg-white px-3 py-2 ring-1 ring-slate-200" open={optional.some((f) => saved.has(f.key) || e[f.key])}>
           <summary className="cursor-pointer text-xs font-medium text-slate-700">
-            Optional details <span className="font-normal text-slate-500">(scope and member fields, only if Equifax asks for them)</span>
+            Optional details <span className="font-normal text-slate-500">(only if Equifax asks for them)</span>
           </summary>
           <div className="mt-3 grid gap-3 pb-1 sm:grid-cols-2">{optional.map(input)}</div>
         </details>

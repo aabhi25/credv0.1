@@ -95,6 +95,48 @@ export const ENDPOINT_PLACEHOLDERS: Partial<Record<BureauCode, string>> = {
   EQUIFAX: "https://api.uat.equifax.co.in/business/cir/v1/cir360Report",
 };
 
+/** A bureau environment the superadmin can pick instead of typing addresses. */
+export type BureauEnvironment = {
+  key: string;
+  label: string;
+  hint: string;
+  /** endpointUrl plus any URL credential fields (e.g. tokenUrl). */
+  urls: Record<string, string>;
+};
+
+// From the CIR360 Report API spec (developer.equifax.in). Production's token URL follows the same pattern.
+export const BUREAU_ENVIRONMENTS: Partial<Record<BureauCode, BureauEnvironment[]>> = {
+  EQUIFAX: [
+    {
+      key: "sandbox",
+      label: "Sandbox",
+      hint: "Equifax's test data. Use the sandbox client ID and secret.",
+      urls: {
+        endpointUrl: "https://api.sandbox.equifax.co.in/business/cir/v1/cir360Report",
+        tokenUrl: "https://api.sandbox.equifax.co.in/v2/oauth/token",
+      },
+    },
+    {
+      key: "uat",
+      label: "UAT (Test)",
+      hint: "After the app is promoted to Test in the developer portal.",
+      urls: {
+        endpointUrl: "https://api.uat.equifax.co.in/business/cir/v1/cir360Report",
+        tokenUrl: "https://api.uat.equifax.co.in/v2/oauth/token",
+      },
+    },
+    {
+      key: "production",
+      label: "Production",
+      hint: "Live credit reports, billed by Equifax. Use the Live client ID and secret.",
+      urls: {
+        endpointUrl: "https://api.equifax.co.in/business/cir/v1/cir360Report",
+        tokenUrl: "https://api.equifax.co.in/v2/oauth/token",
+      },
+    },
+  ],
+};
+
 export const CREDENTIAL_FIELDS: Partial<Record<BureauCode, CredentialField[]>> = {
   EQUIFAX: [
     {
