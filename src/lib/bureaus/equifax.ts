@@ -29,8 +29,10 @@ type HeaderCredentials = Pick<
 /** OAuth scope for the CIR 360 API, used when none is configured. */
 export const DEFAULT_SCOPE = "https://api.equifax.com/business/cir/v1";
 
-const TIMEOUT_MS = 30_000;
-const PROBE_TIMEOUT_MS = 15_000;
+// Equifax's gateway gives up on its report service after about 50 s and answers 504 with a reason,
+// so wait a little longer than that. Tokens come back in well under a second.
+const REPORT_TIMEOUT_MS = 55_000;
+const TOKEN_TIMEOUT_MS = 15_000;
 
 // Payment / account status codes (spec Appendix I) we count as a serious delinquency ("default").
 const SEVERE_DPD = new Set(["90+", "120+", "180+", "360+", "540+", "720+"]);
@@ -298,11 +300,16 @@ export function classifyGatewayError(err: BureauError): ProbeResult | null {
 }
 
 /** Turns a failed fetch into an explanation an admin can act on. */
+function isTimeout(err: unknown) {
+  const code = (err as { cause?: { code?: string } } | null)?.cause?.code ?? "";
+  const name = err instanceof Error ? err.name : "";
+  return name === "TimeoutError" || ["UND_ERR_CONNECT_TIMEOUT", "ETIMEDOUT", "UND_ERR_HEADERS_TIMEOUT"].includes(code);
+}
+
 export function describeNetworkError(err: unknown, host: string): string {
   const cause = (err as { cause?: { code?: string } } | null)?.cause;
   const code = cause?.code ?? "";
-  const name = err instanceof Error ? err.name : "";
-  if (name === "TimeoutError" || ["UND_ERR_CONNECT_TIMEOUT", "ETIMEDOUT", "UND_ERR_HEADERS_TIMEOUT"].includes(code)) {
+  if (isTimeout(err)) {
     return `${host} didn't answer in time. Check the address, or ask Equifax whether access is restricted by IP address.`;
   }
   if (code === "ENOTFOUND" || code === "EAI_AGAIN") return `${host} couldn't be found. Check the API address.`;
@@ -322,6 +329,12 @@ function hostOf(url: string) {
   }
 }
 
+function gatewayDetail(body: unknown) {
+  const b = obj(body);
+  const detail = [str(b.efxErrorCode), str(b.description)].filter(Boolean).join(": ");
+  return detail ? `, ${detail}` : "";
+}
+
 /** Equifax's gateway errors look like { efxErrorCode, description }; OAuth errors like { error, error_description }. */
 export function describeHttpError(status: number, body: unknown): string {
   const b = obj(body);
@@ -335,7 +348,7 @@ async function send(url: string, init: RequestInit, timeoutMs: number) {
   try {
     return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs), cache: "no-store" });
   } catch (err) {
-    throw new BureauError(describeNetworkError(err, hostOf(url)), "NETWORK");
+    throw new BureauError(describeNetworkError(err, hostOf(url)), isTimeout(err) ? "TIMEOUT" : "NETWORK");
   }
 }
 
@@ -401,18 +414,32 @@ async function getAccessToken(creds: EquifaxCredentials, timeoutMs: number, forc
 /** Posts a JSON request to the report API with a Bearer token. */
 async function postReport(creds: EquifaxCredentials, body: unknown, timeoutMs: number): Promise<unknown> {
   const call = async (forceNewToken: boolean) => {
-    const headers = {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      Authorization: `Bearer ${await getAccessToken(creds, timeoutMs, forceNewToken)}`,
-    };
-    return send(creds.endpointUrl, { method: "POST", headers, body: JSON.stringify(body) }, timeoutMs);
+    const token = await getAccessToken(creds, TOKEN_TIMEOUT_MS, forceNewToken);
+    const headers = { "Content-Type": "application/json", Accept: "application/json", Authorization: `Bearer ${token}` };
+    try {
+      return await send(creds.endpointUrl, { method: "POST", headers, body: JSON.stringify(body) }, timeoutMs);
+    } catch (err) {
+      // We have a token, so the gateway is reachable: a timeout here is Equifax's report service.
+      if (err instanceof BureauError && err.code === "TIMEOUT") {
+        throw new BureauError(
+          `Signed in to Equifax, but its report service didn't respond within ${timeoutMs / 1000} seconds. Ask Equifax to check the report service for your app.`,
+          "TIMEOUT",
+        );
+      }
+      throw err;
+    }
   };
 
   let res = await call(false);
   // A cached token can be revoked early; get a fresh one once.
   if (res.status === 401) res = await call(true);
   const json = await readJson(res);
+  if (res.status === 504 || res.status === 503) {
+    throw new BureauError(
+      `Signed in to Equifax, but its report service didn't respond (HTTP ${res.status}${gatewayDetail(json)}). This is on Equifax's side: ask them to check the report service for your app.`,
+      `HTTP_${res.status}`,
+    );
+  }
   if (!res.ok) throw new BureauError(describeHttpError(res.status, json), `HTTP_${res.status}`);
   return json;
 }
@@ -421,15 +448,15 @@ export function createEquifaxAdapter(creds: EquifaxCredentials): BureauAdapter {
   return {
     code: "EQUIFAX",
     async fetchReport(req) {
-      return parseEquifaxResponse(await postReport(creds, buildEquifaxRequest(creds, req), TIMEOUT_MS));
+      return parseEquifaxResponse(await postReport(creds, buildEquifaxRequest(creds, req), REPORT_TIMEOUT_MS));
     },
     async probe() {
       try {
         // Getting a token proves the client ID and secret without touching any report.
-        await getAccessToken(creds, PROBE_TIMEOUT_MS, true);
+        await getAccessToken(creds, TOKEN_TIMEOUT_MS, true);
         const signedIn = "Signed in to Equifax (access token received).";
         try {
-          const result = classifyProbeResponse(await postReport(creds, buildEquifaxProbeRequest(creds), PROBE_TIMEOUT_MS));
+          const result = classifyProbeResponse(await postReport(creds, buildEquifaxProbeRequest(creds), REPORT_TIMEOUT_MS));
           return { ...result, message: `${signedIn} ${result.message}` };
         } catch (err) {
           const probe = err instanceof BureauError ? classifyGatewayError(err) : null;
