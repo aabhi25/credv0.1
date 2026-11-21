@@ -6,7 +6,7 @@ import { useConfirm } from "@/components/ConfirmDialog";
 import { Modal } from "@/components/Modal";
 import { ActiveBadge, BureauStatusBadge, Button, Field, inputClass } from "@/components/ui";
 import { INQUIRY_PURPOSES, STATES } from "@/lib/bureaus/codes";
-import { CREDENTIAL_FIELDS, type BureauCode, type BureauStatus } from "@/lib/bureaus/types";
+import { CREDENTIAL_FIELDS, ENDPOINT_PLACEHOLDERS, type BureauCode, type BureauStatus, type CredentialField } from "@/lib/bureaus/types";
 import { formatDateTime, formatInr } from "@/lib/format";
 import {
   createOrganization,
@@ -380,6 +380,9 @@ type OrgBureau = {
     lastTestedAt: Date | null;
     lastTestOk: boolean | null;
     lastTestMessage: string | null;
+    /** False when required fields are missing, e.g. saved for an older connection method. */
+    complete: boolean;
+    savedKeys: string[];
   } | null;
 };
 
@@ -464,7 +467,14 @@ export function OrganizationBureaus({ orgId, orgName, bureaus }: { orgId: string
                         API credentials saved · {b.credential.hint} · {new URL(b.credential.endpointUrl).host} · updated{" "}
                         {formatDateTime(b.credential.updatedAt)}
                       </span>
-                      <LastTest credential={b.credential} />
+                      {b.credential.complete ? (
+                        <LastTest credential={b.credential} />
+                      ) : (
+                        <span className="mt-0.5 flex items-center gap-1 text-amber-800">
+                          <AlertTriangle className="h-3.5 w-3.5" /> Missing required details (e.g. OAuth client ID and secret).
+                          Click Update.
+                        </span>
+                      )}
                     </span>
                   ) : (
                     <span>No API credentials yet. Checks can&apos;t run until they&apos;re added.</span>
@@ -685,6 +695,14 @@ function BureauTestPanel({ orgId, bureau, label }: { orgId: string; bureau: Bure
   );
 }
 
+function hostOf(url: string) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
 function BureauCredentialsForm({
   orgId,
   bureau,
@@ -699,36 +717,60 @@ function BureauCredentialsForm({
   const [state, action, pending] = useActionState(saveBureauCredentials.bind(null, orgId, bureau), {});
   const onSubmit = useSubmit(action);
   const fields = CREDENTIAL_FIELDS[bureau] ?? [];
+  const required = fields.filter((f) => !f.optional && f.key !== "scope");
+  const optional = fields.filter((f) => f.optional);
+  const saved = new Set(existing?.savedKeys ?? []);
   const e = state.errors ?? {};
 
   useEffect(() => {
     if (state.ok) onSaved();
   }, [state, onSaved]);
 
+  const input = (f: CredentialField) => (
+    <Field key={f.key} label={f.label} error={e[f.key]} hint={f.hint}>
+      <input
+        name={f.key}
+        type={f.secret ? "password" : "text"}
+        maxLength={f.maxLength}
+        placeholder={saved.has(f.key) ? (f.secret ? "•••••• (saved; leave blank to keep)" : "Saved; leave blank to keep") : (f.placeholder ?? "")}
+        autoComplete={f.secret ? "new-password" : "off"}
+        spellCheck={false}
+        className={`${inputClass} font-mono`}
+      />
+    </Field>
+  );
+
   return (
     <form onSubmit={onSubmit} className="mt-3 space-y-3 border-t border-slate-200 pt-3" autoComplete="off">
       <p className="text-xs text-slate-500">
-        Use the credentials Equifax issued to this organization. They&apos;re stored encrypted and never shown again.
-        {existing && " Leave a field blank to keep its saved value."}
+        Use the API access Equifax issued to this organization (client ID and secret from Equifax&apos;s developer portal).
+        Everything is stored encrypted and secrets are never shown again.
       </p>
-      <Field label="API address" error={e.endpointUrl} hint="The test (UAT) or production URL from the bureau">
-        <input name="endpointUrl" defaultValue={existing?.endpointUrl} placeholder="https://" className={`${inputClass} font-mono`} />
+      <Field
+        label="Report API address"
+        error={e.endpointUrl}
+        hint={
+          existing && !existing.complete
+            ? `Replace the old address (${hostOf(existing.endpointUrl)}) with the sandbox, UAT or production address from Equifax`
+            : "Sandbox, UAT or production address from Equifax"
+        }
+      >
+        <input
+          name="endpointUrl"
+          defaultValue={existing?.complete ? existing.endpointUrl : ""}
+          placeholder={ENDPOINT_PLACEHOLDERS[bureau] ?? "https://"}
+          className={`${inputClass} font-mono`}
+        />
       </Field>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {fields.map((f) => (
-          <Field key={f.key} label={f.label} error={e[f.key]}>
-            <input
-              name={f.key}
-              type={f.secret ? "password" : "text"}
-              maxLength={f.maxLength}
-              placeholder={existing ? (f.secret ? "•••••• (saved)" : "Saved; leave blank to keep") : ""}
-              autoComplete={f.secret ? "new-password" : "off"}
-              spellCheck={false}
-              className={`${inputClass} font-mono`}
-            />
-          </Field>
-        ))}
-      </div>
+      <div className="grid gap-3 sm:grid-cols-2">{required.map((f) => (f.url ? <div key={f.key} className="sm:col-span-2">{input(f)}</div> : input(f)))}</div>
+      {optional.length > 0 && (
+        <details className="rounded-lg bg-white px-3 py-2 ring-1 ring-slate-200" open={optional.some((f) => saved.has(f.key) || e[f.key])}>
+          <summary className="cursor-pointer text-xs font-medium text-slate-700">
+            Optional details <span className="font-normal text-slate-500">(scope and member fields, only if Equifax asks for them)</span>
+          </summary>
+          <div className="mt-3 grid gap-3 pb-1 sm:grid-cols-2">{optional.map(input)}</div>
+        </details>
+      )}
       {e.form && <p className="text-xs text-rose-600">{e.form}</p>}
       <Button type="submit" disabled={pending}>
         {pending ? "Saving…" : existing ? "Update credentials" : "Save credentials"}

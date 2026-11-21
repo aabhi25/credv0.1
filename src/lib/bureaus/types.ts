@@ -78,14 +78,39 @@ export const BUREAU_STATUS_LABELS: Record<BureauStatus, string> = {
 };
 
 /** Credential fields a superadmin enters per organization, by bureau. */
-export type CredentialField = { key: string; label: string; secret?: boolean; maxLength: number; hint?: string };
+export type CredentialField = {
+  key: string;
+  label: string;
+  maxLength: number;
+  secret?: boolean;
+  /** Must be an https:// address. */
+  url?: boolean;
+  optional?: boolean;
+  placeholder?: string;
+  hint?: string;
+};
+
+/** What the API address (endpointUrl) field should look like for each bureau. */
+export const ENDPOINT_PLACEHOLDERS: Partial<Record<BureauCode, string>> = {
+  EQUIFAX: "https://api.uat.equifax.co.in/business/cir/v1/cir360Report",
+};
 
 export const CREDENTIAL_FIELDS: Partial<Record<BureauCode, CredentialField[]>> = {
   EQUIFAX: [
-    { key: "customerId", label: "Customer ID", maxLength: 50 },
-    { key: "userId", label: "User ID", maxLength: 50 },
-    { key: "password", label: "Password", secret: true, maxLength: 50 },
-    { key: "memberNumber", label: "Member number", maxLength: 10 },
-    { key: "securityCode", label: "Security code", secret: true, maxLength: 3 },
+    {
+      key: "tokenUrl",
+      label: "OAuth token URL",
+      url: true,
+      maxLength: 300,
+      placeholder: "https://api.uat.equifax.co.in/v2/oauth/token",
+    },
+    { key: "clientId", label: "Client ID", maxLength: 200, hint: "From Equifax's developer portal" },
+    { key: "clientSecret", label: "Client secret", secret: true, maxLength: 300 },
+    { key: "scope", label: "Scope", optional: true, maxLength: 300, hint: "Only if Equifax's documentation asks for one" },
+    { key: "customerId", label: "Customer ID", optional: true, maxLength: 50 },
+    { key: "userId", label: "User ID", optional: true, maxLength: 50 },
+    { key: "password", label: "Password", secret: true, optional: true, maxLength: 50 },
+    { key: "memberNumber", label: "Member number", optional: true, maxLength: 10 },
+    { key: "securityCode", label: "Security code", secret: true, optional: true, maxLength: 3 },
   ],
 };

@@ -7,7 +7,7 @@ import { requireSuperadmin } from "@/lib/auth";
 import { BUREAU_LABELS, BUREAUS, isIntegrated, type BureauCode } from "@/lib/bureaus";
 import { db } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
-import { orgBureauStatuses } from "@/lib/org-bureaus";
+import { credentialsComplete, orgBureauStatuses, savedCredentialKeys } from "@/lib/org-bureaus";
 import { getBaseUrl } from "@/lib/url";
 import { viewOrganization } from "../../../view-as";
 import { AddUserButton, OrganizationBureaus, OrganizationStatusButton, RenameOrganizationButton, UserRow } from "../../forms";
@@ -24,7 +24,7 @@ export default async function OrganizationPage({ params }: { params: Promise<{ i
         users: { orderBy: { createdAt: "asc" } },
         bureaus: true,
         bureauCredentials: {
-          select: { bureau: true, hint: true, endpointUrl: true, updatedAt: true, lastTestedAt: true, lastTestOk: true, lastTestMessage: true },
+          select: { bureau: true, hint: true, endpointUrl: true, encrypted: true, updatedAt: true, lastTestedAt: true, lastTestOk: true, lastTestMessage: true },
         },
         programs: { orderBy: { createdAt: "asc" }, include: { _count: { select: { checks: true } } } },
       },
@@ -44,7 +44,12 @@ export default async function OrganizationPage({ params }: { params: Promise<{ i
     status: statuses[code],
     programs: org.programs.filter((p) => p.bureau === code).length,
     integrated: isIntegrated(code),
-    credential: org.bureauCredentials.find((c) => c.bureau === code) ?? null,
+    credential: (() => {
+      const c = org.bureauCredentials.find((row) => row.bureau === code);
+      if (!c) return null;
+      const { encrypted, ...rest } = c; // never send secrets to the browser
+      return { ...rest, complete: credentialsComplete(code, encrypted), savedKeys: savedCredentialKeys(encrypted) };
+    })(),
   }));
   const stats = [
     { label: "Admins", value: org.users.length },

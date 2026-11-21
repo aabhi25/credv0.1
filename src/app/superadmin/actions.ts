@@ -8,7 +8,7 @@ import { BureauError, getBureauAdapter } from "@/lib/bureaus";
 import { INQUIRY_PURPOSES } from "@/lib/bureaus/codes";
 import { BUREAUS, CREDENTIAL_FIELDS, INTEGRATED_BUREAUS, type BureauCode } from "@/lib/bureaus/types";
 import { db } from "@/lib/db";
-import { loadBureauCredentials } from "@/lib/org-bureaus";
+import { credentialsComplete, loadBureauCredentials } from "@/lib/org-bureaus";
 import { hashPassword } from "@/lib/password";
 import { decryptJson, encryptJson } from "@/lib/secrets";
 import { applicantSchema, parseDob } from "@/lib/validation";
@@ -160,29 +160,29 @@ export async function saveBureauCredentials(
   const previous = existing ? decryptJson<Record<string, string>>(existing.encrypted) : {};
 
   const errors: Record<string, string> = {};
-  const endpointUrl = String(formData.get("endpointUrl") ?? "").trim() || existing?.endpointUrl || "";
-  try {
-    const url = new URL(endpointUrl);
-    // http is only allowed for a local test server during development.
-    const localDev = process.env.NODE_ENV !== "production" && ["localhost", "127.0.0.1"].includes(url.hostname);
-    if (url.protocol !== "https:" && !(localDev && url.protocol === "http:")) errors.endpointUrl = "Use an https:// address";
-  } catch {
-    errors.endpointUrl = "Enter the full API address, e.g. https://…";
-  }
+  // Credentials saved for an older connection method must get a new address, not silently keep the old one.
+  const keepEndpoint = existing && credentialsComplete(bureau, existing.encrypted) ? existing.endpointUrl : "";
+  const endpointUrl = String(formData.get("endpointUrl") ?? "").trim() || keepEndpoint;
+  const endpointError = urlError(endpointUrl);
+  if (endpointError) errors.endpointUrl = endpointError;
 
   const values: Record<string, string> = {};
   for (const f of fields) {
     const typed = String(formData.get(f.key) ?? "").trim();
     const value = typed || previous[f.key] || "";
-    if (!value) errors[f.key] = `${f.label} is required`;
-    else if (value.length > f.maxLength) errors[f.key] = `${f.label} can be at most ${f.maxLength} characters`;
+    if (!value) {
+      if (!f.optional) errors[f.key] = `${f.label} is required`;
+      continue;
+    }
+    if (value.length > f.maxLength) errors[f.key] = `${f.label} can be at most ${f.maxLength} characters`;
+    else if (f.url && urlError(value)) errors[f.key] = urlError(value)!;
     values[f.key] = value;
   }
   if (Object.keys(errors).length) return { errors };
 
   // A non-secret label so the UI can show which account is saved without decrypting.
-  const member = values.memberNumber ?? "";
-  const hint = member ? `Member ••••${member.slice(-4)}` : "";
+  const id = values.clientId ?? values.memberNumber ?? "";
+  const hint = id ? `${values.clientId ? "Client" : "Member"} ••••${id.slice(-4)}` : "";
   await db.bureauCredential.upsert({
     where: { organizationId_bureau: { organizationId: orgId, bureau } },
     update: { endpointUrl, encrypted: encryptJson(values), hint },
@@ -191,6 +191,18 @@ export async function saveBureauCredentials(
   revalidatePath("/superadmin", "layout");
   revalidatePath("/admin", "layout");
   return { ok: existing ? "Credentials updated" : "Credentials saved" };
+}
+
+/** null when fine; https only, except a local test server during development. */
+function urlError(value: string): string | null {
+  try {
+    const url = new URL(value);
+    const localDev = process.env.NODE_ENV !== "production" && ["localhost", "127.0.0.1"].includes(url.hostname);
+    if (url.protocol !== "https:" && !(localDev && url.protocol === "http:")) return "Use an https:// address";
+    return null;
+  } catch {
+    return "Enter the full address, starting with https://";
+  }
 }
 
 export async function removeBureauCredentials(orgId: string, bureau: string) {

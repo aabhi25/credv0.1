@@ -56,11 +56,24 @@ To integrate a bureau, add an adapter to `INTEGRATIONS` in `src/lib/bureaus/inde
 
 ### Equifax
 
+- Connects through Equifax's **API gateway with OAuth 2** (client credentials). The superadmin enters, per
+  organization: the report API address, the OAuth token URL, the client ID and the client secret (from Equifax's
+  developer portal). Scope and member fields (customer ID, user ID, password, member number, security code) are
+  optional and only sent if filled in.
+  - Sandbox: token `https://api.sandbox.equifax.co.in/v2/oauth/token`, report
+    `https://api.sandbox.equifax.co.in/business/cir/v1/cir360Report`
+  - UAT: token `https://api.uat.equifax.co.in/v2/oauth/token`, report
+    `https://api.uat.equifax.co.in/business/cir/v1/cir360Report`
+- The token is requested with HTTP Basic auth (`grant_type=client_credentials`), cached until shortly before it
+  expires, and refreshed once automatically if Equifax rejects it.
 - Request: name, DOB, address with state code and PIN, mobile and PAN, plus the program's enquiry purpose.
 - Read from the report: ERS 4.0 score, total monthly EMIs, and "defaults" = accounts that were 90+ days past due,
   written off, settled, suit filed, wilful default, doubtful, loss or sub-standard in the 48-month history.
 - DTI = existing EMIs ÷ the monthly income the applicant enters. No credit file (`HitCode 00`) is declined.
-- Credentials are entered per organization on the superadmin organization page and encrypted with `CREDENTIALS_KEY`.
+- **Test** on the superadmin organization page: a quick check (gets a token, then sends a blank enquiry, so no
+  report is pulled) or a test enquiry for a UAT test applicant.
+- Credentials are encrypted with `CREDENTIALS_KEY`. Credentials saved before OAuth support count as incomplete
+  until updated.
 - Run `npm test` for the request/response tests. Bureau documentation goes in `vendor-docs/` (git-ignored).
 
 ## Before production
@@ -68,4 +81,4 @@ To integrate a bureau, add an adapter to `INTEGRATIONS` in `src/lib/bureaus/inde
 - Switch Prisma to Postgres (`provider = "postgresql"` in the schema) and set `APP_URL`.
 - Replace the in-memory rate limiter (`src/lib/rate-limit.ts`) with a shared store if running more than one server.
 - Review consent wording and data retention with compliance.
-- Ask each bureau to allow-list the production server's IP address.
+- Ask each bureau whether production access needs IP allow-listing, and if so give them the server's fixed IP.

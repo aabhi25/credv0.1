@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildEquifaxProbeRequest, buildEquifaxRequest, classifyProbeResponse, describeNetworkError, parseEquifaxResponse } from "./equifax";
+import {
+  buildEquifaxProbeRequest,
+  buildEquifaxRequest,
+  buildTokenRequest,
+  classifyProbeResponse,
+  describeHttpError,
+  describeNetworkError,
+  parseEquifaxResponse,
+} from "./equifax";
 import { BureauError, type BureauRequest } from "./types";
 
 // Fixtures are synthetic but follow the structure of Equifax's IDCCR sample response.
@@ -155,12 +163,39 @@ describe("connection test", () => {
 describe("describeNetworkError", () => {
   const fetchError = (code: string) => Object.assign(new TypeError("fetch failed"), { cause: { code } });
 
-  it("points to IP allow-listing when the connection times out", () => {
-    assert.match(describeNetworkError(fetchError("UND_ERR_CONNECT_TIMEOUT"), "x.example"), /allow-listed/);
-    assert.match(describeNetworkError(Object.assign(new Error("t"), { name: "TimeoutError" }), "x.example"), /allow-listed/);
+  it("explains a connection timeout", () => {
+    assert.match(describeNetworkError(fetchError("UND_ERR_CONNECT_TIMEOUT"), "x.example"), /didn't answer/);
+    assert.match(describeNetworkError(Object.assign(new Error("t"), { name: "TimeoutError" }), "x.example"), /didn't answer/);
   });
 
   it("flags a wrong address", () => {
     assert.match(describeNetworkError(fetchError("ENOTFOUND"), "x.example"), /couldn't be found/);
+  });
+});
+
+describe("OAuth", () => {
+  it("requests a client-credentials token with HTTP Basic auth", () => {
+    const req = buildTokenRequest({ clientId: "my-client", clientSecret: "s3cret" });
+    assert.equal(req.headers.Authorization, `Basic ${Buffer.from("my-client:s3cret").toString("base64")}`);
+    assert.equal(req.headers["Content-Type"], "application/x-www-form-urlencoded");
+    assert.equal(req.body, "grant_type=client_credentials");
+  });
+
+  it("adds a scope only when one is configured", () => {
+    const req = buildTokenRequest({ clientId: "c", clientSecret: "s", scope: "cir.read" });
+    assert.equal(new URLSearchParams(req.body).get("scope"), "cir.read");
+  });
+
+  it("leaves member fields out of the request header when they aren't set", () => {
+    const body = buildEquifaxRequest({ memberNumber: "MEMBER0001" }, request);
+    assert.deepEqual(Object.keys(body.RequestHeader).sort(), ["CustRefField", "MemberNumber", "ProductCode"]);
+  });
+
+  it("explains Equifax gateway and OAuth errors", () => {
+    assert.equal(
+      describeHttpError(401, { efxErrorCode: "401.03", description: "Invalid mandatory parameters" }),
+      "Equifax returned HTTP 401 (401.03: Invalid mandatory parameters)",
+    );
+    assert.match(describeHttpError(401, { error: "invalid_client", error_description: "Invalid mandatory parameters" }), /invalid_client/);
   });
 });

@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Program } from "@prisma/client";
 import { BUREAU_LABELS, BureauError, bureauStatus, getBureauAdapter, type BureauCode, type BureauReport } from "./bureaus";
 import { db } from "./db";
-import { loadBureauCredentials } from "./org-bureaus";
+import { hasUsableCredentials, loadBureauCredentials } from "./org-bureaus";
 import { evaluate } from "./rules";
 import { ageFrom, maskPan, parseDob, type ApplicantInput } from "./validation";
 
@@ -20,7 +20,7 @@ export async function programAvailability(program: Program): Promise<Availabilit
     where: { organizationId_bureau: { organizationId: program.organizationId, bureau } },
   });
   if (!setting?.enabled) return { ok: false, reason: `${label} is not enabled for your organization` };
-  const hasCredentials = (await db.bureauCredential.count({ where: { organizationId: program.organizationId, bureau } })) > 0;
+  const hasCredentials = await hasUsableCredentials(program.organizationId, bureau);
   const status = bureauStatus(bureau, hasCredentials);
   if (status === "NOT_INTEGRATED") return { ok: false, reason: `${label} is not integrated yet` };
   if (status === "NEEDS_CREDENTIALS") return { ok: false, reason: `${label} API credentials are not configured` };

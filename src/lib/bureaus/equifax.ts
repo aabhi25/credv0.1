@@ -2,15 +2,24 @@ import { BureauError, type BureauAdapter, type BureauReport, type BureauRequest,
 
 // Equifax India "IDCCR" consolidated credit report, REST/JSON over HTTPS.
 // Spec: IDCCR Bureau System-to-System External Interface Specification, June 2025.
+// Connects through Equifax's API gateway (api.sandbox / api.uat / api.equifax.co.in): a
+// client-credentials token from the OAuth URL (client ID + secret via HTTP Basic) is sent as a
+// Bearer token with each request. Member fields, if given, also go in the request header.
 
 export type EquifaxCredentials = {
   endpointUrl: string;
-  customerId: string;
-  userId: string;
-  password: string;
-  memberNumber: string;
-  securityCode: string;
+  tokenUrl?: string;
+  clientId?: string;
+  clientSecret?: string;
+  scope?: string;
+  customerId?: string;
+  userId?: string;
+  password?: string;
+  memberNumber?: string;
+  securityCode?: string;
 };
+
+type HeaderCredentials = Pick<EquifaxCredentials, "customerId" | "userId" | "password" | "memberNumber" | "securityCode">;
 
 const TIMEOUT_MS = 30_000;
 const PROBE_TIMEOUT_MS = 15_000;
@@ -54,17 +63,25 @@ function ymd(d: Date) {
   return d.toISOString().slice(0, 10);
 }
 
-export function buildEquifaxRequest(creds: Omit<EquifaxCredentials, "endpointUrl">, req: BureauRequest) {
+/** Member fields for the request header; empty ones are left out (they're optional). */
+function requestHeader(creds: HeaderCredentials, reference: string) {
+  const fields = {
+    CustomerId: creds.customerId,
+    UserId: creds.userId,
+    Password: creds.password,
+    MemberNumber: creds.memberNumber,
+    SecurityCode: creds.securityCode,
+  };
   return {
-    RequestHeader: {
-      CustomerId: creds.customerId,
-      UserId: creds.userId,
-      Password: creds.password,
-      MemberNumber: creds.memberNumber,
-      SecurityCode: creds.securityCode,
-      CustRefField: req.reference.slice(0, 50),
-      ProductCode: ["IDCCR"],
-    },
+    ...(Object.fromEntries(Object.entries(fields).filter(([, v]) => v)) as Partial<Record<keyof typeof fields, string>>),
+    CustRefField: reference.slice(0, 50),
+    ProductCode: ["IDCCR"],
+  };
+}
+
+export function buildEquifaxRequest(creds: HeaderCredentials, req: BureauRequest) {
+  return {
+    RequestHeader: requestHeader(creds, req.reference),
     RequestBody: {
       InquiryPurpose: req.inquiryPurpose,
       ...splitName(req.name),
@@ -175,7 +192,7 @@ const AUTH_ERRORS = new Set([
 const UNAVAILABLE_ERRORS = new Set(["E0029", "E0030", "E0046"]);
 
 /** A deliberately blank enquiry: Equifax can check the login but has nothing to pull a report for. */
-export function buildEquifaxProbeRequest(creds: Omit<EquifaxCredentials, "endpointUrl">) {
+export function buildEquifaxProbeRequest(creds: HeaderCredentials) {
   const full = buildEquifaxRequest(creds, {
     name: "",
     pan: "",
@@ -216,7 +233,7 @@ export function describeNetworkError(err: unknown, host: string): string {
   const code = cause?.code ?? "";
   const name = err instanceof Error ? err.name : "";
   if (name === "TimeoutError" || ["UND_ERR_CONNECT_TIMEOUT", "ETIMEDOUT", "UND_ERR_HEADERS_TIMEOUT"].includes(code)) {
-    return `${host} didn't answer. This usually means Equifax hasn't allow-listed this server's IP address yet.`;
+    return `${host} didn't answer in time. Check the address, or ask Equifax whether access is restricted by IP address.`;
   }
   if (code === "ENOTFOUND" || code === "EAI_AGAIN") return `${host} couldn't be found. Check the API address.`;
   if (code === "ECONNREFUSED") return `${host} refused the connection. Check the API address and port.`;
@@ -227,44 +244,122 @@ export function describeNetworkError(err: unknown, host: string): string {
   return `Couldn't connect to ${host}${code ? ` (${code})` : ""}.`;
 }
 
-async function post(endpointUrl: string, body: unknown, timeoutMs: number) {
-  const host = (() => {
-    try {
-      return new URL(endpointUrl).host;
-    } catch {
-      return endpointUrl;
-    }
-  })();
-  let res: Response;
+function hostOf(url: string) {
   try {
-    res = await fetch(endpointUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
-      cache: "no-store",
-    });
-  } catch (err) {
-    throw new BureauError(describeNetworkError(err, host), "NETWORK");
-  }
-  if (!res.ok) throw new BureauError(`Equifax returned HTTP ${res.status}`, `HTTP_${res.status}`);
-  try {
-    return (await res.json()) as unknown;
+    return new URL(url).host;
   } catch {
+    return url;
+  }
+}
+
+/** Equifax's gateway errors look like { efxErrorCode, description }; OAuth errors like { error, error_description }. */
+export function describeHttpError(status: number, body: unknown): string {
+  const b = obj(body);
+  const code = str(b.efxErrorCode) || str(b.error) || str(b.errorCode);
+  const msg = str(b.description) || str(b.error_description) || str(b.message);
+  const detail = [code, msg].filter(Boolean).join(": ");
+  return `Equifax returned HTTP ${status}${detail ? ` (${detail})` : ""}`;
+}
+
+async function send(url: string, init: RequestInit, timeoutMs: number) {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs), cache: "no-store" });
+  } catch (err) {
+    throw new BureauError(describeNetworkError(err, hostOf(url)), "NETWORK");
+  }
+}
+
+async function readJson(res: Response): Promise<unknown> {
+  const text = await res.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    if (!res.ok) return { description: text.slice(0, 200) };
     throw new BureauError("Equifax returned a response that isn't valid JSON", "BAD_RESPONSE");
   }
 }
 
+// --- OAuth (API gateway) -------------------------------------------------------------------------
+
+type CachedToken = { token: string; expiresAt: number };
+// One cache per server process: Next.js can load this module more than once (per route bundle).
+const globalForTokens = globalThis as unknown as { equifaxTokens?: Map<string, CachedToken> };
+const tokenCache = (globalForTokens.equifaxTokens ??= new Map<string, CachedToken>());
+
+/** Basic-auth header for the client-credentials grant, as Equifax's token endpoint expects. */
+export function buildTokenRequest(creds: Pick<EquifaxCredentials, "clientId" | "clientSecret" | "scope">) {
+  const body = new URLSearchParams({ grant_type: "client_credentials" });
+  if (creds.scope) body.set("scope", creds.scope);
+  return {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${Buffer.from(`${creds.clientId ?? ""}:${creds.clientSecret ?? ""}`).toString("base64")}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+    },
+    body: body.toString(),
+  } satisfies RequestInit;
+}
+
+async function getAccessToken(creds: EquifaxCredentials, timeoutMs: number, forceNew = false): Promise<string> {
+  if (!creds.tokenUrl || !creds.clientId || !creds.clientSecret) {
+    throw new BureauError(
+      "These Equifax credentials are missing the OAuth URL, client ID or client secret. Update them on the superadmin organization page.",
+      "OAUTH_CONFIG",
+    );
+  }
+  const key = `${creds.tokenUrl}|${creds.clientId}|${creds.scope ?? ""}`;
+  const cached = tokenCache.get(key);
+  if (!forceNew && cached && cached.expiresAt > Date.now()) return cached.token;
+
+  const res = await send(creds.tokenUrl, buildTokenRequest(creds), timeoutMs);
+  const body = obj(await readJson(res));
+  if (!res.ok) {
+    const code = str(body.error);
+    if (res.status === 401 || code === "invalid_client") {
+      throw new BureauError(`Equifax rejected the client ID or secret (${describeHttpError(res.status, body)})`, "OAUTH_INVALID_CLIENT");
+    }
+    throw new BureauError(`Couldn't get an Equifax access token: ${describeHttpError(res.status, body)}`, "OAUTH_FAILED");
+  }
+  const token = str(body.access_token);
+  if (!token) throw new BureauError("Equifax's token response had no access_token", "OAUTH_FAILED");
+  // Refresh a minute early; default to 5 minutes if Equifax doesn't say.
+  const ttl = (num(body.expires_in) ?? 300) * 1000;
+  tokenCache.set(key, { token, expiresAt: Date.now() + Math.max(ttl - 60_000, 30_000) });
+  return token;
+}
+
+/** Posts a JSON request to the report API with a Bearer token. */
+async function postReport(creds: EquifaxCredentials, body: unknown, timeoutMs: number): Promise<unknown> {
+  const call = async (forceNewToken: boolean) => {
+    const headers = {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      Authorization: `Bearer ${await getAccessToken(creds, timeoutMs, forceNewToken)}`,
+    };
+    return send(creds.endpointUrl, { method: "POST", headers, body: JSON.stringify(body) }, timeoutMs);
+  };
+
+  let res = await call(false);
+  // A cached token can be revoked early; get a fresh one once.
+  if (res.status === 401) res = await call(true);
+  const json = await readJson(res);
+  if (!res.ok) throw new BureauError(describeHttpError(res.status, json), `HTTP_${res.status}`);
+  return json;
+}
+
 export function createEquifaxAdapter(creds: EquifaxCredentials): BureauAdapter {
-  const { endpointUrl, ...auth } = creds;
   return {
     code: "EQUIFAX",
     async fetchReport(req) {
-      return parseEquifaxResponse(await post(endpointUrl, buildEquifaxRequest(auth, req), TIMEOUT_MS));
+      return parseEquifaxResponse(await postReport(creds, buildEquifaxRequest(creds, req), TIMEOUT_MS));
     },
     async probe() {
       try {
-        return classifyProbeResponse(await post(endpointUrl, buildEquifaxProbeRequest(auth), PROBE_TIMEOUT_MS));
+        // Getting a token proves the client ID and secret without touching any report.
+        await getAccessToken(creds, PROBE_TIMEOUT_MS, true);
+        const result = classifyProbeResponse(await postReport(creds, buildEquifaxProbeRequest(creds), PROBE_TIMEOUT_MS));
+        return { ...result, message: `Signed in to Equifax (access token received). ${result.message}` };
       } catch (err) {
         if (err instanceof BureauError) return { ok: false, code: err.code, message: err.message };
         throw err;
