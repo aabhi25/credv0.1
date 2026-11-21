@@ -1,4 +1,4 @@
-import { BureauError, type BureauAdapter, type BureauReport, type BureauRequest, type ProbeResult } from "./types";
+import { BureauError, DEFAULT_EQUIFAX_SCOPE, type BureauAdapter, type BureauReport, type BureauRequest, type ProbeResult } from "./types";
 
 // Equifax India CIR 360 credit report, REST/JSON over HTTPS.
 // Spec: CIR360 Report API 1.0.0 (OpenAPI, developer.equifax.in), with field details from the
@@ -27,7 +27,7 @@ type HeaderCredentials = Pick<
 >;
 
 /** OAuth scope for the CIR 360 API, used when none is configured. */
-export const DEFAULT_SCOPE = "https://api.equifax.com/business/cir/v1";
+export const DEFAULT_SCOPE = DEFAULT_EQUIFAX_SCOPE;
 
 // Equifax's gateway gives up on its report service after about 50 s and answers 504 with a reason,
 // so wait a little longer than that. Tokens come back in well under a second.

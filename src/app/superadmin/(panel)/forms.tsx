@@ -6,7 +6,7 @@ import { useConfirm } from "@/components/ConfirmDialog";
 import { Modal } from "@/components/Modal";
 import { ActiveBadge, BureauStatusBadge, Button, Field, inputClass } from "@/components/ui";
 import { INQUIRY_PURPOSES, STATES } from "@/lib/bureaus/codes";
-import { BUREAU_ENVIRONMENTS, CREDENTIAL_FIELDS, ENDPOINT_PLACEHOLDERS, type BureauCode, type BureauStatus, type CredentialField } from "@/lib/bureaus/types";
+import { BUREAU_ENVIRONMENTS, CREDENTIAL_FIELDS, DEFAULT_EQUIFAX_SCOPE, ENDPOINT_PLACEHOLDERS, type BureauCode, type BureauStatus, type CredentialField } from "@/lib/bureaus/types";
 import { formatDateTime, formatInr } from "@/lib/format";
 import {
   createOrganization,
@@ -779,6 +779,13 @@ function BureauCredentialsForm({
               <input type="hidden" name={key} value={url} />
             </div>
           ))}
+          {bureau === "EQUIFAX" && (
+            <div className="flex min-w-0 flex-wrap gap-x-2">
+              <dt className="text-slate-500">Scope</dt>
+              <dd className="min-w-0 break-all font-mono text-slate-700">{DEFAULT_EQUIFAX_SCOPE}</dd>
+              <dd className="text-slate-400">(a permission name, sent with the token request; not an address)</dd>
+            </div>
+          )}
           {(e.endpointUrl || [...urlKeys].some((k) => e[k])) && (
             <p className="text-rose-600">{e.endpointUrl ?? [...urlKeys].map((k) => e[k]).find(Boolean)}</p>
           )}

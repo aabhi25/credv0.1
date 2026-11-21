@@ -95,6 +95,9 @@ export const ENDPOINT_PLACEHOLDERS: Partial<Record<BureauCode, string>> = {
   EQUIFAX: "https://api.uat.equifax.co.in/business/cir/v1/cir360Report",
 };
 
+/** OAuth scope for Equifax's CIR 360 API (a permission name, not an address). */
+export const DEFAULT_EQUIFAX_SCOPE = "https://api.equifax.com/business/cir/v1";
+
 /** A bureau environment the superadmin can pick instead of typing addresses. */
 export type BureauEnvironment = {
   key: string;
