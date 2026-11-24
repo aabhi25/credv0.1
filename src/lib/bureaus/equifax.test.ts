@@ -356,6 +356,18 @@ describe("OAuth", () => {
     assert.match(describeHttpError(418, body({ foo: 1, bar: 2 })), /fields: foo, bar/);
   });
 
+  it("reads the text of a web page sent instead of an error", () => {
+    const page = `<!DOCTYPE html> <html lang="en"> <head> <meta charset="utf-8"> <title>Request Rejected</title><style>p{color:red}</style></head>
+      <body><script>var secret = 1</script><h1>Request Rejected</h1><p>Your address 3.7.26.159 isn&#39;t allowed.</p><p>Your support ID is: 1234567890123</p></body></html>`;
+    const message = describeHttpError(418, { efxErrorCode: "418.00", description: "See", additionalErrorDetails: page });
+    assert.match(message, /Request Rejected - Your address 3\.7\.26\.159 isn't allowed/);
+    assert.match(message, /reference 1234567890123/);
+    assert.doesNotMatch(message, /<|secret|color/);
+    assert.match(describeHttpError(500, { description: page }), /web page: Request Rejected/);
+    assert.match(describeHttpError(418, { additionalErrorDetails: { message: page } }), /web page: Request Rejected/);
+    assert.match(describeHttpError(500, { description: "<html><head></head><body></body></html>" }), /web page with no text/);
+  });
+
   it("understands a bureau error wrapped by the gateway", () => {
     const wrap = (ErrorCode: string, ErrorMsg: string) =>
       unwrapBureauError({ efxErrorCode: "418.00", additionalErrorDetails: { Error: [{ ErrorCode, ErrorMsg }] } });

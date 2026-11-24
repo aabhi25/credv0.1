@@ -189,15 +189,43 @@ function errorDetail(error: { code: string; msg: string }) {
   return [error.code, safeText(error.msg)].filter(Boolean).join(": ");
 }
 
+/** The title and visible text of a web page, e.g. a firewall's block page. Null if it isn't one. */
+function pageText(text: string): string | null {
+  if (!/<(!doctype\s+html|html|head|body)[\s>]/i.test(text)) return null;
+  const clean = (html: string) =>
+    html
+      .replace(/<[^>]*>/g, " ")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&amp;/gi, "&")
+      .replace(/&#0?39;|&apos;/gi, "'")
+      .replace(/&quot;/gi, '"')
+      .replace(/\s+/g, " ")
+      .trim();
+  const title = clean(text.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "");
+  const visible = clean(
+    text.replace(/<!--[\s\S]*?-->/g, " ").replace(/<(head|script|style|noscript|svg)\b[\s\S]*?(<\/\1>|$)/gi, " "),
+  );
+  const parts = [title, visible.startsWith(title) ? visible.slice(title.length).trim() : visible].filter(Boolean);
+  return parts.length ? `web page: ${parts.join(" - ")}` : "web page with no text";
+}
+
 /** Error text without anything that could identify an applicant. */
 function safeText(text: string) {
+  const page = pageText(text);
+  // A block page's reference number is what Equifax needs to trace it.
+  const refs = page ? [...page.matchAll(/\b(?:support|reference|incident|request|event|trace)\s*(?:id|no\.?|number|#)?\s*(?:is)?\s*[:#]?\s*([\w.-]*\d[\w.-]{5,60})/gi)].map((m) => m[1]) : [];
+  const masked = maskPersonal(page ?? text, page ? 400 : 200);
+  return refs.length ? `${masked} (reference ${[...new Set(refs)].slice(0, 2).join(", ")})` : masked;
+}
+
+function maskPersonal(text: string, max: number) {
   return text
     .split("~")[0]
     .replace(/\S+@\S+/g, "…")
     .replace(/\b[A-Za-z]{5}\d{4}[A-Za-z]\b/g, "…")
     .replace(/(?<![A-Za-z])\d[\d\s-]{4,}\d/g, "…")
     .trim()
-    .slice(0, 200);
+    .slice(0, max);
 }
 
 /** Equifax's documentation sample fills every field with the word "string". */
@@ -431,7 +459,7 @@ function hostOf(url: string) {
 
 function gatewayDetail(body: unknown) {
   const b = obj(body);
-  const detail = [str(b.efxErrorCode), str(b.description)].filter(Boolean).join(": ");
+  const detail = [str(b.efxErrorCode), safeText(str(b.description))].filter(Boolean).join(": ");
   return detail ? `, ${detail}` : "";
 }
 
@@ -507,7 +535,7 @@ async function readJson(res: Response): Promise<unknown> {
   try {
     return text ? JSON.parse(text) : {};
   } catch {
-    if (!res.ok) return { description: text.slice(0, 200) };
+    if (!res.ok) return { description: text };
     throw new BureauError("Equifax returned a response that isn't valid JSON", "BAD_RESPONSE");
   }
 }
