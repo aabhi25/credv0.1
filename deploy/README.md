@@ -30,3 +30,8 @@ HTTPS. Keep a safe copy of `CREDENTIALS_KEY` from `/opt/credcap/.env`: saved bur
 
 Backups are daily at 02:30 server time, kept 14 days in `/var/backups/credcap`. They stay on the same server, so also
 turn on Lightsail automatic snapshots.
+
+## Read-only log access
+
+`deploy/log-access.sh` lets one SSH key, from one IP address, run only `logs`, `status` and `diagnose`. It gets no shell,
+`.env` or database. Remove it with `sudo bash /opt/credcap/deploy/log-access.sh remove`.

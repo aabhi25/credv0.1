@@ -632,29 +632,45 @@ async function postReport(creds: EquifaxCredentials, body: unknown, timeoutMs: n
   return json;
 }
 
+async function checkConnection(creds: EquifaxCredentials): Promise<ProbeResult> {
+  try {
+    // Getting a token proves the client ID and secret without touching any report.
+    await getAccessToken(creds, TOKEN_TIMEOUT_MS, true);
+    const signedIn = "Signed in to Equifax (access token received).";
+    try {
+      const result = classifyProbeResponse(await postReport(creds, buildEquifaxProbeRequest(creds), REPORT_TIMEOUT_MS));
+      return { ...result, message: `${signedIn} ${result.message}` };
+    } catch (err) {
+      const probe = err instanceof BureauError ? classifyGatewayError(err) : null;
+      if (probe) return { ...probe, message: `${signedIn} ${probe.message}` };
+      throw err;
+    }
+  } catch (err) {
+    if (err instanceof BureauError) return { ok: false, code: err.code, message: err.message };
+    throw err;
+  }
+}
+
+/** Server log line for a failed call. Messages here are already free of applicant details. */
+function logFailure(call: string, creds: EquifaxCredentials, code: string | undefined, message: string) {
+  console.warn(`[equifax] ${call} failed at ${hostOf(creds.endpointUrl)}: ${code ?? "UNKNOWN"}: ${message}`);
+}
+
 export function createEquifaxAdapter(creds: EquifaxCredentials): BureauAdapter {
   return {
     code: "EQUIFAX",
     async fetchReport(req) {
-      return parseEquifaxResponse(await postReport(creds, buildEquifaxRequest(creds, req), REPORT_TIMEOUT_MS));
-    },
-    async probe() {
       try {
-        // Getting a token proves the client ID and secret without touching any report.
-        await getAccessToken(creds, TOKEN_TIMEOUT_MS, true);
-        const signedIn = "Signed in to Equifax (access token received).";
-        try {
-          const result = classifyProbeResponse(await postReport(creds, buildEquifaxProbeRequest(creds), REPORT_TIMEOUT_MS));
-          return { ...result, message: `${signedIn} ${result.message}` };
-        } catch (err) {
-          const probe = err instanceof BureauError ? classifyGatewayError(err) : null;
-          if (probe) return { ...probe, message: `${signedIn} ${probe.message}` };
-          throw err;
-        }
+        return parseEquifaxResponse(await postReport(creds, buildEquifaxRequest(creds, req), REPORT_TIMEOUT_MS));
       } catch (err) {
-        if (err instanceof BureauError) return { ok: false, code: err.code, message: err.message };
+        if (err instanceof BureauError) logFailure("report", creds, err.code, err.message);
         throw err;
       }
+    },
+    async probe() {
+      const result = await checkConnection(creds);
+      if (!result.ok) logFailure("quick check", creds, result.code, result.message);
+      return result;
     },
   };
 }
