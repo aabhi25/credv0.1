@@ -457,6 +457,12 @@ function hostOf(url: string) {
   }
 }
 
+/** Equifax's own ID for a request, which its engineers can look up. */
+function traceNote(res: Response) {
+  const id = res.headers.get("efx-transaction-id") ?? "";
+  return /^[\w-]{8,64}$/.test(id) ? ` Equifax transaction ${id}.` : "";
+}
+
 function gatewayDetail(body: unknown) {
   const b = obj(body);
   const detail = [str(b.efxErrorCode), safeText(str(b.description))].filter(Boolean).join(": ");
@@ -614,14 +620,14 @@ async function postReport(creds: EquifaxCredentials, body: unknown, timeoutMs: n
   const json = await readJson(res);
   if (res.status === 504 || res.status === 503) {
     throw new BureauError(
-      `Signed in to Equifax, but its report service didn't respond (HTTP ${res.status}${gatewayDetail(json)}). Ask Equifax to check the report service for your app, and whether this server's IP address needs allow-listing.`,
+      `Signed in to Equifax, but its report service didn't respond (HTTP ${res.status}${gatewayDetail(json)}). Ask Equifax to check the report service for your app, and whether this server's IP address needs allow-listing.${traceNote(res)}`,
       `HTTP_${res.status}`,
     );
   }
   if (!res.ok) {
     const wrapped = res.status === 401 || res.status === 403 ? null : unwrapBureauError(json);
     if (wrapped) return wrapped;
-    throw new BureauError(describeHttpError(res.status, json), `HTTP_${res.status}`);
+    throw new BureauError(`${describeHttpError(res.status, json)}${traceNote(res) && `.${traceNote(res)}`}`, `HTTP_${res.status}`);
   }
   return json;
 }
