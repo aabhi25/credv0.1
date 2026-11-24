@@ -70,6 +70,11 @@ install -m 644 deploy/credcap.service /etc/systemd/system/credcap.service
 install -m 644 deploy/credcap-backup.service /etc/systemd/system/credcap-backup.service
 install -m 644 deploy/credcap-backup.timer /etc/systemd/system/credcap-backup.timer
 sed "s/__DOMAIN__/$DOMAIN/" deploy/Caddyfile > /etc/caddy/Caddyfile
+# On a root domain (example.com), also send www visitors to it.
+if [[ "$DOMAIN" != *.*.* ]]; then
+  printf '\nwww.%s {\n\tredir https://%s{uri} permanent\n}\n' "$DOMAIN" "$DOMAIN" >> /etc/caddy/Caddyfile
+fi
+caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 systemctl daemon-reload
 systemctl enable --now credcap credcap-backup.timer
 systemctl enable caddy

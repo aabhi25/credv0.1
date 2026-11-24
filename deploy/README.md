@@ -5,6 +5,7 @@ For a **new** Ubuntu 24.04 server (2 GB, Mumbai). Don't run it on a server that 
 1. Create the server with a public IPv4 address and attach a static IP.
 2. Firewall: 80 and 443 open to everyone, 22 to your own IP (plus Lightsail's browser SSH). Keep 3000 closed.
 3. Add a DNS **A record** for the domain pointing to the static IP. Remove any AAAA record.
+   For a root domain, `www` should also point to it; the setup redirects it.
 4. If the repository is private: run `sudo ssh-keygen -t ed25519 -f /root/.ssh/credcap -N ""` on the server, add
    `/root/.ssh/credcap.pub` as a read-only deploy key in GitHub, and use this clone command in step 5 instead:
    `sudo GIT_SSH_COMMAND="ssh -i /root/.ssh/credcap" git clone -b feat/initial-app git@github.com:aabhi25/credv0.1.git /opt/credcap`
