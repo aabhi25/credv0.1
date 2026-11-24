@@ -1,0 +1,21 @@
+[Unit]
+Description=CredCap AI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=credcap
+WorkingDirectory=/opt/credcap
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3000
+Restart=always
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/credcap /opt/credcap/.next
+
+[Install]
+WantedBy=multi-user.target

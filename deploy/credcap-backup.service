@@ -1,0 +1,7 @@
+[Unit]
+Description=CredCap AI database backup
+
+[Service]
+Type=oneshot
+User=credcap
+ExecStart=/usr/bin/bash /opt/credcap/deploy/backup.sh

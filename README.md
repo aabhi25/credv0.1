@@ -79,6 +79,7 @@ To integrate a bureau, add an adapter to `INTEGRATIONS` in `src/lib/bureaus/inde
 
 ## Before production
 
+- To host on AWS Lightsail, see `deploy/README.md`.
 - Switch Prisma to Postgres (`provider = "postgresql"` in the schema) and set `APP_URL`.
 - Replace the in-memory rate limiter (`src/lib/rate-limit.ts`) with a shared store if running more than one server.
 - Review consent wording and data retention with compliance.
