@@ -186,8 +186,18 @@ function isMismatch(error: { code: string; msg: string }) {
 
 /** Equifax can append the consumer's masked phones and emails after "~"; never keep those. */
 function errorDetail(error: { code: string; msg: string }) {
-  const msg = error.msg.split("~")[0].trim();
-  return [error.code, msg].filter(Boolean).join(": ");
+  return [error.code, safeText(error.msg)].filter(Boolean).join(": ");
+}
+
+/** Error text without anything that could identify an applicant. */
+function safeText(text: string) {
+  return text
+    .split("~")[0]
+    .replace(/\S+@\S+/g, "…")
+    .replace(/\b[A-Za-z]{5}\d{4}[A-Za-z]\b/g, "…")
+    .replace(/(?<![A-Za-z])\d[\d\s-]{4,}\d/g, "…")
+    .trim()
+    .slice(0, 200);
 }
 
 /** Equifax's documentation sample fills every field with the word "string". */
@@ -425,12 +435,62 @@ function gatewayDetail(body: unknown) {
   return detail ? `, ${detail}` : "";
 }
 
+/** additionalErrorDetails isn't in Equifax's spec: it may be an object, a list, or either as JSON text. */
+function additionalDetails(body: unknown): unknown {
+  const raw = obj(body).additionalErrorDetails;
+  if (typeof raw !== "string") return raw;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
+
+const ERROR_KEY = /code|msg|message|desc|detail|reason|error|title|status|field/i;
+// Parts that echo what was sent, or the consumer's own details.
+const PERSONAL_KEY = /request|applicant|customer|consumer|address|phone|mobile|email|name|dob|birth|^pan|idvalue|iddetails|password|security/i;
+
+/** Error codes and messages inside additionalErrorDetails, skipping anything personal. */
+function collectDetails(value: unknown, key = "detail", depth = 0): string[] {
+  if (value === null || value === undefined || depth > 5 || PERSONAL_KEY.test(key)) return [];
+  if (Array.isArray(value)) return value.slice(0, 10).flatMap((v) => collectDetails(v, key, depth + 1));
+  if (typeof value === "object") return Object.entries(value).flatMap(([k, v]) => collectDetails(v, k, depth + 1));
+  const text = ERROR_KEY.test(key) ? safeText(str(value)) : "";
+  return text ? [text] : [];
+}
+
+/** The bureau's own error (e.g. E0048), when the gateway wraps it in additionalErrorDetails. */
+function bureauError(value: unknown, depth = 0): { code: string; msg: string } | null {
+  if (!value || typeof value !== "object" || depth > 5) return null;
+  if (!Array.isArray(value)) {
+    const o = obj(value);
+    const code = [o.ErrorCode, o.errorCode, o.code, o.Code].map(str).find((c) => /^(E\d{4}|GSWDOE\d+|EX\d{2})$/.test(c));
+    if (code) return { code, msg: [o.ErrorMsg, o.errorMsg, o.errorMessage, o.message, o.description, o.Details].map(str).find(Boolean) ?? "" };
+  }
+  for (const v of Object.values(value)) {
+    const found = bureauError(v, depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
+/** Rewrites a wrapped bureau error as the error reply the parser already understands. */
+export function unwrapBureauError(body: unknown): unknown | null {
+  const error = bureauError(additionalDetails(body));
+  return error && { InquiryResponseHeader: { SuccessCode: "0" }, Error: [{ ErrorCode: error.code, ErrorMsg: error.msg }] };
+}
+
 /** Equifax's gateway errors look like { efxErrorCode, description }; OAuth errors like { error, error_description }. */
 export function describeHttpError(status: number, body: unknown): string {
   const b = obj(body);
   const code = str(b.efxErrorCode) || str(b.error) || str(b.errorCode);
   const msg = str(b.description) || str(b.error_description) || str(b.message);
-  const detail = [code, msg].filter(Boolean).join(": ");
+  const details = additionalDetails(body);
+  const more = [...new Set(collectDetails(details))].slice(0, 6).join(", ");
+  // Nothing readable: say which fields came back, so it can still be diagnosed.
+  const fields = Object.keys(obj(details)).filter((k) => /^[A-Za-z]\w{0,39}$/.test(k)).slice(0, 10).join(", ");
+  const extra = more || (fields && `fields: ${fields}`);
+  const detail = [code, safeText(msg), extra].filter(Boolean).join(": ");
   return `Equifax returned HTTP ${status}${detail ? ` (${detail})` : ""}`;
 }
 
@@ -530,7 +590,11 @@ async function postReport(creds: EquifaxCredentials, body: unknown, timeoutMs: n
       `HTTP_${res.status}`,
     );
   }
-  if (!res.ok) throw new BureauError(describeHttpError(res.status, json), `HTTP_${res.status}`);
+  if (!res.ok) {
+    const wrapped = res.status === 401 || res.status === 403 ? null : unwrapBureauError(json);
+    if (wrapped) return wrapped;
+    throw new BureauError(describeHttpError(res.status, json), `HTTP_${res.status}`);
+  }
   return json;
 }
 

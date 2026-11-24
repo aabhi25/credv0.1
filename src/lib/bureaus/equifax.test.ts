@@ -10,6 +10,7 @@ import {
   describeHttpError,
   describeNetworkError,
   parseEquifaxResponse,
+  unwrapBureauError,
 } from "./equifax";
 import { BureauError, type BureauRequest } from "./types";
 
@@ -330,6 +331,38 @@ describe("OAuth", () => {
     assert.equal(denied?.ok, false);
     assert.match(denied!.message, /CIR Client Gateway/);
     assert.equal(classifyGatewayError(new BureauError("Equifax returned HTTP 500", "HTTP_500")), null);
+  });
+
+  it("shows additionalErrorDetails without personal details", () => {
+    const body = (additionalErrorDetails: unknown) => ({
+      efxErrorCode: "418.00",
+      description: "Please refer to additionalErrorDetails",
+      additionalErrorDetails,
+    });
+    const cases: unknown[] = [
+      { message: "Missing LastName" },
+      [{ code: "400", message: "Missing LastName" }],
+      JSON.stringify({ errors: [{ reason: "Missing LastName" }] }),
+      "Missing LastName",
+    ];
+    for (const details of cases) assert.match(describeHttpError(418, body(details)), /418\.00.*Missing LastName/);
+
+    const personal = describeHttpError(418, body({
+      message: "PAN ABCDE1234F, phone 9876543210, a@b.com bad",
+      InquiryRequestInfo: { message: "Asha" },
+      FirstName: "Asha",
+    }));
+    assert.doesNotMatch(personal, /ABCDE1234F|9876543210|a@b\.com|Asha/);
+    assert.match(describeHttpError(418, body({ foo: 1, bar: 2 })), /fields: foo, bar/);
+  });
+
+  it("understands a bureau error wrapped by the gateway", () => {
+    const wrap = (ErrorCode: string, ErrorMsg: string) =>
+      unwrapBureauError({ efxErrorCode: "418.00", additionalErrorDetails: { Error: [{ ErrorCode, ErrorMsg }] } });
+    assert.equal(classifyProbeResponse(wrap("E0048", "Address information not present.")).ok, true);
+    assert.equal(classifyProbeResponse(wrap("E0104", "Invalid security code")).ok, false);
+    assert.equal(parseEquifaxResponse(wrap("E0011", "Consumer record not found")).hit, false);
+    assert.equal(unwrapBureauError({ efxErrorCode: "418.00", additionalErrorDetails: { message: "x" } }), null);
   });
 
   it("explains Equifax gateway and OAuth errors", () => {
