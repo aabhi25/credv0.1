@@ -1,24 +1,34 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useTransition, type FormEvent } from "react";
 import { BadgeCheck, CircleAlert, Loader2, Lock, RotateCcw } from "lucide-react";
+import { PinStateFields } from "@/components/PinStateFields";
 import { Button, Field, inputClass } from "@/components/ui";
-import { STATES } from "@/lib/bureaus/codes";
 import { formatInr } from "@/lib/format";
 import { checkEligibility, type CheckState } from "./actions";
 
-export function CheckForm({ slug, bureauLabel }: { slug: string; bureauLabel: string }) {
+export function CheckForm({ slug, bureauLabel, askIncome }: { slug: string; bureauLabel: string; askIncome: boolean }) {
   const [state, action, pending] = useActionState<CheckState, FormData>(checkEligibility.bind(null, slug), {
     kind: "idle",
   });
 
+  const [, startTransition] = useTransition();
+
   if (state.kind === "result") return <Result state={state} />;
+
+  // Submit without React's automatic form reset so values survive validation errors. The form keeps its
+  // action too, so it still posts if it's submitted before the page's script has loaded.
+  const onSubmit = (ev: FormEvent<HTMLFormElement>) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.currentTarget);
+    startTransition(() => action(fd));
+  };
 
   const errors = state.kind === "invalid" ? state.errors : {};
   const values = state.kind === "invalid" ? state.values : undefined;
 
   return (
-    <form action={action} className="space-y-5" noValidate>
+    <form action={action} onSubmit={onSubmit} className="space-y-5" noValidate>
       {state.kind === "unavailable" && (
         <div className="flex gap-2 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
           <CircleAlert className="h-4 w-4 shrink-0 translate-y-0.5" /> {state.message}
@@ -62,44 +72,24 @@ export function CheckForm({ slug, bureauLabel }: { slug: string; bureauLabel: st
           className={`${inputClass} resize-none`}
         />
       </Field>
-      <div className="grid grid-cols-[minmax(0,1fr)_7.5rem] gap-3">
-        <Field label="State" error={errors.state}>
-          <select name="state" defaultValue={values?.state ?? ""} className={inputClass}>
-            <option value="" disabled>
-              Select
-            </option>
-            {STATES.map((s) => (
-              <option key={s.code} value={s.code}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="PIN code" error={errors.pincode}>
-          <input
-            name="pincode"
-            defaultValue={values?.pincode}
-            placeholder="560038"
-            inputMode="numeric"
-            maxLength={6}
-            autoComplete="postal-code"
-            className={inputClass}
-          />
-        </Field>
+      <div className="grid grid-cols-[7.5rem_minmax(0,1fr)] gap-3">
+        <PinStateFields values={values} errors={errors} />
       </div>
-      <Field label="Monthly income" error={errors.monthlyIncome} hint="Take-home income per month, before EMIs">
-        <div className="flex rounded-lg border border-slate-300 bg-white focus-within:border-navy-700 focus-within:ring-2 focus-within:ring-navy-100">
-          <span className="flex items-center border-r border-slate-200 px-3 text-sm text-slate-500">₹</span>
-          <input
-            name="monthlyIncome"
-            defaultValue={values?.monthlyIncome}
-            placeholder="50,000"
-            inputMode="numeric"
-            maxLength={12}
-            className="w-full rounded-r-lg px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
-          />
-        </div>
-      </Field>
+      {askIncome && (
+        <Field label="Monthly income" error={errors.monthlyIncome} hint="Take-home income per month, before EMIs">
+          <div className="flex rounded-lg border border-slate-300 bg-white focus-within:border-navy-700 focus-within:ring-2 focus-within:ring-navy-100">
+            <span className="flex items-center border-r border-slate-200 px-3 text-sm text-slate-500">₹</span>
+            <input
+              name="monthlyIncome"
+              defaultValue={values?.monthlyIncome}
+              placeholder="50,000"
+              inputMode="numeric"
+              maxLength={12}
+              className="w-full rounded-r-lg px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
+            />
+          </div>
+        </Field>
+      )}
 
       <div>
         <label className="flex items-start gap-3 text-sm text-slate-600">

@@ -17,7 +17,8 @@ type Values = {
   bureau: string;
   inquiryPurpose: string;
   minScore: number;
-  maxDtiPct: number;
+  /** Null: DTI isn't checked. */
+  maxDtiPct: number | null;
   maxDefaults: number;
   minAge: number;
   maxAge: number;
@@ -33,7 +34,7 @@ const DEFAULTS: Values = {
   bureau: "EQUIFAX",
   inquiryPurpose: "06",
   minScore: 650,
-  maxDtiPct: 40,
+  maxDtiPct: null,
   maxDefaults: 0,
   minAge: 21,
   maxAge: 60,
@@ -56,6 +57,7 @@ const SCORE_PRESETS = [
   { label: "Strict", value: 700 },
   { label: "Prime", value: 750 },
 ];
+const DEFAULT_DTI = 40;
 const LIMIT_PRESETS = [25_000, 50_000, 1_00_000, 3_00_000, 5_00_000];
 
 function slugify(value: string) {
@@ -140,7 +142,7 @@ export function ProgramForm({
       <input type="hidden" name="bureau" value={v.bureau} />
       <input type="hidden" name="inquiryPurpose" value={v.inquiryPurpose} />
       <input type="hidden" name="minScore" value={v.minScore} />
-      <input type="hidden" name="maxDtiPct" value={v.maxDtiPct} />
+      <input type="hidden" name="maxDtiPct" value={v.maxDtiPct ?? ""} />
       <input type="hidden" name="maxDefaults" value={v.maxDefaults} />
       <input type="hidden" name="minAge" value={v.minAge} />
       <input type="hidden" name="maxAge" value={v.maxAge} />
@@ -289,28 +291,41 @@ export function ProgramForm({
 
           <Rule
             title="Maximum debt-to-income (DTI)"
-            hint="Existing monthly EMIs as a share of monthly income."
+            hint={
+              v.maxDtiPct === null
+                ? "Off. Applicants aren't asked for their income."
+                : "Existing monthly EMIs as a share of monthly income, which applicants are asked for."
+            }
             error={e.maxDtiPct}
             control={
-              <NumberBox value={v.maxDtiPct} min={0} max={100} suffix="%" onChange={(n) => set("maxDtiPct", n)} label="Maximum DTI" />
+              <div className="flex items-center gap-3">
+                {v.maxDtiPct !== null && (
+                  <NumberBox value={v.maxDtiPct} min={0} max={100} suffix="%" onChange={(n) => set("maxDtiPct", n)} label="Maximum DTI" />
+                )}
+                <Switch on={v.maxDtiPct !== null} onChange={(on) => set("maxDtiPct", on ? DEFAULT_DTI : null)} label="Check debt-to-income" />
+              </div>
             }
           >
-            <div className="flex flex-wrap gap-1.5">
-              {[30, 40, 50].map((p) => (
-                <PresetChip key={p} active={v.maxDtiPct === p} onClick={() => set("maxDtiPct", p)}>
-                  {p}%
-                </PresetChip>
-              ))}
-            </div>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={v.maxDtiPct}
-              onChange={(ev) => set("maxDtiPct", Number(ev.target.value))}
-              aria-label="Maximum DTI"
-              className="mt-3 w-full"
-            />
+            {v.maxDtiPct !== null && (
+              <>
+                <div className="flex flex-wrap gap-1.5">
+                  {[30, 40, 50].map((p) => (
+                    <PresetChip key={p} active={v.maxDtiPct === p} onClick={() => set("maxDtiPct", p)}>
+                      {p}%
+                    </PresetChip>
+                  ))}
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={v.maxDtiPct}
+                  onChange={(ev) => set("maxDtiPct", Number(ev.target.value))}
+                  aria-label="Maximum DTI"
+                  className="mt-3 w-full"
+                />
+              </>
+            )}
           </Rule>
 
           <Rule title="Past defaults allowed" hint="0 means only applicants with a clean repayment record qualify." error={e.maxDefaults}>
@@ -383,16 +398,7 @@ export function ProgramForm({
               <div className="text-sm font-medium text-slate-900">Accept applications</div>
               <div className="text-xs text-slate-500">Turn off to pause the link without deleting the program.</div>
             </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={v.active}
-              aria-label="Accept applications"
-              onClick={() => set("active", !v.active)}
-              className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${v.active ? "bg-navy-900" : "bg-slate-300"}`}
-            >
-              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${v.active ? "left-[22px]" : "left-0.5"}`} />
-            </button>
+            <Switch on={v.active} onChange={(on) => set("active", on)} label="Accept applications" />
           </div>
         </Section>
       </div>
@@ -411,9 +417,11 @@ export function ProgramForm({
                   Credit score <b className="font-semibold text-slate-900">{v.minScore}+</b>{" "}
                   <span className={`text-xs ${band.text}`}>({band.label})</span>
                 </SummaryItem>
-                <SummaryItem>
-                  DTI up to <b className="font-semibold text-slate-900">{v.maxDtiPct}%</b>
-                </SummaryItem>
+                {v.maxDtiPct !== null && (
+                  <SummaryItem>
+                    DTI up to <b className="font-semibold text-slate-900">{v.maxDtiPct}%</b>
+                  </SummaryItem>
+                )}
                 <SummaryItem>
                   {v.maxDefaults === 0 ? (
                     <b className="font-semibold text-slate-900">No past defaults</b>
@@ -628,5 +636,20 @@ function SummaryItem({ children }: { children: ReactNode }) {
       <CircleCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
       <span>{children}</span>
     </li>
+  );
+}
+
+function Switch({ on, onChange, label }: { on: boolean; onChange: (on: boolean) => void; label: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      onClick={() => onChange(!on)}
+      className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${on ? "bg-navy-900" : "bg-slate-300"}`}
+    >
+      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${on ? "left-[22px]" : "left-0.5"}`} />
+    </button>
   );
 }

@@ -68,7 +68,7 @@ export async function runEligibilityCheck(
       inquiryPurpose: program.inquiryPurpose,
       reference: randomUUID().replace(/-/g, "").slice(0, 20),
     });
-    dtiPct = Math.round((report.existingEmi / input.monthlyIncome) * 100);
+    if (input.monthlyIncome) dtiPct = Math.round((report.existingEmi / input.monthlyIncome) * 100);
 
     if (!report.hit || report.score === null) {
       // No credit file (or no score): there's nothing to assess against the rules.
@@ -99,7 +99,7 @@ export async function runEligibilityCheck(
       score: report?.score ?? null,
       dtiPct,
       defaults: report?.defaults ?? null,
-      monthlyIncome: input.monthlyIncome,
+      monthlyIncome: input.monthlyIncome ?? null,
       existingEmi: report?.existingEmi ?? null,
       bureauRef: report?.bureauRef ?? null,
       status,

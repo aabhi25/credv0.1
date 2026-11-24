@@ -43,7 +43,7 @@ export default async function CheckPage({ params }: Props) {
       <main className="mx-auto -mt-24 max-w-md px-4 pb-16">
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xl shadow-navy-900/5 sm:p-8">
           {available ? (
-            <CheckForm slug={program.slug} bureauLabel={bureauLabel} />
+            <CheckForm slug={program.slug} bureauLabel={bureauLabel} askIncome={program.maxDtiPct !== null} />
           ) : (
             <div className="py-6 text-center">
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">

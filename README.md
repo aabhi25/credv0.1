@@ -6,7 +6,7 @@ Instant pre-approved credit checks with configurable rule engines and pluggable 
   creates organizations, manages their admin accounts (email or username, password, enable or disable), chooses
   which credit bureaus each organization can see and use, and can disable a whole organization. **Admins** only ever see their own organization's data.
 - **Programs (rule engines):** one per partner group, e.g. Education or Consumer Brands. Each has its own
-  bureau, criteria (min score, max DTI, max defaults, age range, approved limit) and shareable link
+  bureau, criteria (min score, optional max DTI, max defaults, age range, approved limit) and shareable link
   `/check/<slug>`.
 - **Bureaus:** Equifax, TransUnion CIBIL, CRIF High Mark and Experian behind one adapter interface. Checks always
   call the bureau live. **Equifax (IDCCR JSON API) is integrated**; the other three are not yet. Each organization

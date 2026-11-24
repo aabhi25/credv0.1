@@ -54,7 +54,7 @@ export default async function ProgramsPage() {
               </div>
               <div>
                 <dt className="text-xs text-slate-500">Max DTI</dt>
-                <dd className="font-semibold text-slate-900">{p.maxDtiPct}%</dd>
+                <dd className="font-semibold text-slate-900">{p.maxDtiPct === null ? "Not checked" : `${p.maxDtiPct}%`}</dd>
               </div>
               <div>
                 <dt className="text-xs text-slate-500">Max defaults</dt>

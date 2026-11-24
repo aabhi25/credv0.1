@@ -4,8 +4,9 @@ import { useActionState, useEffect, useState, useTransition, type FormEvent } fr
 import { AlertTriangle, CircleCheck, CircleX, KeyRound, Loader2, Pencil, Plus, PlugZap, UserPlus } from "lucide-react";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { Modal } from "@/components/Modal";
+import { PinStateFields } from "@/components/PinStateFields";
 import { ActiveBadge, BureauStatusBadge, Button, Field, inputClass } from "@/components/ui";
-import { INQUIRY_PURPOSES, STATES } from "@/lib/bureaus/codes";
+import { INQUIRY_PURPOSES } from "@/lib/bureaus/codes";
 import { BUREAU_ENVIRONMENTS, CREDENTIAL_FIELDS, DEFAULT_EQUIFAX_SCOPE, ENDPOINT_PLACEHOLDERS, type BureauCode, type BureauStatus, type CredentialField } from "@/lib/bureaus/types";
 import { formatDateTime, formatInr } from "@/lib/format";
 import {
@@ -629,21 +630,7 @@ function BureauTestPanel({ orgId, bureau, label }: { orgId: string; bureau: Bure
               <input name="address" className={inputClass} />
             </Field>
             <div className="grid gap-3 sm:grid-cols-3">
-              <Field label="State" error={e.state}>
-                <select name="state" defaultValue="" className={inputClass}>
-                  <option value="" disabled>
-                    Select
-                  </option>
-                  {STATES.map((s) => (
-                    <option key={s.code} value={s.code}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="PIN code" error={e.pincode}>
-                <input name="pincode" inputMode="numeric" maxLength={6} className={inputClass} />
-              </Field>
+              <PinStateFields errors={e} />
               <Field label="Loan type">
                 <select name="inquiryPurpose" defaultValue="05" className={inputClass}>
                   {INQUIRY_PURPOSES.map((p) => (

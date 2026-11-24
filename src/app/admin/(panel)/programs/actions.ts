@@ -6,7 +6,7 @@ import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { programAvailability, runEligibilityCheck } from "@/lib/eligibility";
 import { enabledBureaus } from "@/lib/org-bureaus";
-import { applicantSchema, programSchema } from "@/lib/validation";
+import { applicantSchemaFor, programSchema } from "@/lib/validation";
 
 export type ProgramFormState = { errors?: Record<string, string>; saved?: boolean };
 
@@ -77,13 +77,14 @@ export async function runBulkCheck(programId: string, rows: BulkRow[]): Promise<
   const availability = await programAvailability(program);
   if (!availability.ok) return { results: [], error: `Can't run checks: ${availability.reason}.` };
 
+  const schema = applicantSchemaFor(program);
   const results: BulkResult[] = new Array(rows.length);
   let next = 0;
   // A few requests in parallel, so large files don't hammer the bureau.
   const worker = async () => {
     while (next < rows.length) {
       const i = next++;
-      const parsed = applicantSchema.safeParse(rows[i]);
+      const parsed = schema.safeParse(rows[i]);
       const name = String(rows[i]?.name ?? "");
       if (!parsed.success) {
         results[i] = { row: i + 2, name, status: "INVALID", detail: parsed.error.issues.map((e) => e.message).join("; ") };

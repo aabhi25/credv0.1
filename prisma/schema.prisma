@@ -76,7 +76,7 @@ model Program {
   bureau        String   @default("EQUIFAX")
   inquiryPurpose String  @default("05") // bureau enquiry purpose code, e.g. 05 = Personal Loan
   minScore      Int      @default(650)
-  maxDtiPct     Int      @default(40)
+  maxDtiPct     Int? // null = DTI isn't checked and applicants aren't asked for income
   maxDefaults   Int      @default(0)
   minAge        Int      @default(21)
   maxAge        Int      @default(60)

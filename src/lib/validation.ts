@@ -44,7 +44,14 @@ export const applicantSchema = z.object({
     ),
 });
 
-export type ApplicantInput = z.infer<typeof applicantSchema>;
+const withoutIncome = applicantSchema.omit({ monthlyIncome: true });
+
+/** Income is only needed for the DTI rule, so it's only asked for when a program has one. */
+export function applicantSchemaFor(program: { maxDtiPct: number | null }) {
+  return program.maxDtiPct === null ? withoutIncome : applicantSchema;
+}
+
+export type ApplicantInput = z.infer<typeof withoutIncome> & { monthlyIncome?: number };
 
 /** Accepts YYYY-MM-DD (date input) or DD/MM/YYYY / DD-MM-YYYY (CSV). */
 export function parseDob(value: string): Date | null {
@@ -88,7 +95,8 @@ export const programSchema = z
       .string()
       .refine((v) => INQUIRY_PURPOSES.some((p) => p.code === v), "Choose the loan type for bureau enquiries"),
     minScore: z.coerce.number().int().min(300).max(900),
-    maxDtiPct: z.coerce.number().int().min(0).max(100),
+    // Blank: the program doesn't check DTI.
+    maxDtiPct: z.preprocess((v) => (v === "" ? null : v), z.coerce.number().int().min(0).max(100).nullable()),
     maxDefaults: z.coerce.number().int().min(0).max(10),
     minAge: z.coerce.number().int().min(18).max(80),
     maxAge: z.coerce.number().int().min(18).max(100),

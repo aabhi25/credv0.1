@@ -6,7 +6,7 @@ import { Download, FileSpreadsheet, Loader2, UploadCloud } from "lucide-react";
 import { Button, StatusBadge } from "@/components/ui";
 import { runBulkCheck, type BulkResult, type BulkRow } from "../actions";
 
-const COLUMNS = ["name", "mobile", "pan", "dob", "address", "state", "pincode", "income"] as const;
+const COLUMNS = ["name", "mobile", "pan", "dob", "address", "pincode", "state", "income"] as const;
 
 // Accept common header spellings, e.g. "PIN Code", "postal", "Monthly Income".
 const HEADER_ALIASES: Record<string, (typeof COLUMNS)[number]> = {
@@ -27,12 +27,20 @@ function normaliseHeader(h: string) {
   return HEADER_ALIASES[key] ?? key;
 }
 
-const TEMPLATE = [
-  COLUMNS.join(","),
-  'Asha Verma,9876543210,ABCDE1234F,14/05/1990,"12 MG Road, Indiranagar, Bengaluru",Karnataka,560038,65000',
-].join("\n");
+const EXAMPLE = ["Asha Verma", "9876543210", "ABCDE1234F", "14/05/1990", '"12 MG Road, Indiranagar, Bengaluru"', "560038", "Karnataka", "65000"];
 
-export function BulkUpload({ programId, blockedReason }: { programId: string; blockedReason: string | null }) {
+export function BulkUpload({
+  programId,
+  blockedReason,
+  askIncome,
+}: {
+  programId: string;
+  blockedReason: string | null;
+  /** Whether the program checks DTI, which needs each applicant's income. */
+  askIncome: boolean;
+}) {
+  const columns = askIncome ? COLUMNS : COLUMNS.filter((c) => c !== "income");
+  const template = [columns, EXAMPLE.slice(0, columns.length)].map((r) => r.join(",")).join("\n");
   const inputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [rows, setRows] = useState<BulkRow[]>([]);
@@ -50,7 +58,7 @@ export function BulkUpload({ programId, blockedReason }: { programId: string; bl
       skipEmptyLines: true,
       transformHeader: normaliseHeader,
       complete: (parsed) => {
-        const missing = COLUMNS.filter((c) => !parsed.meta.fields?.includes(c));
+        const missing = columns.filter((c) => !parsed.meta.fields?.includes(c));
         if (missing.length) {
           setRows([]);
           setError(`Missing column(s): ${missing.join(", ")}`);
@@ -110,10 +118,11 @@ export function BulkUpload({ programId, blockedReason }: { programId: string; bl
           {fileName ? `${fileName} · ${rows.length} row(s)` : "Drop a CSV here or click to browse"}
         </p>
         <p className="mt-1 text-xs text-slate-500">
-          Columns: name, mobile, pan, dob, address, state, pincode, income (monthly) · max 500 rows
+          Columns: {columns.join(", ")}
+          {askIncome && " (monthly)"} · max 500 rows
         </p>
         <a
-          href={`data:text/csv;charset=utf-8,${encodeURIComponent(TEMPLATE)}`}
+          href={`data:text/csv;charset=utf-8,${encodeURIComponent(template)}`}
           download="credcap-bulk-template.csv"
           onClick={(e) => e.stopPropagation()}
           className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-navy-700 hover:text-navy-900"

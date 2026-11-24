@@ -1,6 +1,7 @@
 export type ProgramCriteria = {
   minScore: number;
-  maxDtiPct: number;
+  /** Null: DTI isn't checked. */
+  maxDtiPct: number | null;
   maxDefaults: number;
   minAge: number;
   maxAge: number;
@@ -8,7 +9,7 @@ export type ProgramCriteria = {
 };
 
 /** What the rules look at, derived from the bureau report plus the applicant's income. */
-export type Assessment = { score: number; dtiPct: number; defaults: number };
+export type Assessment = { score: number; dtiPct: number | null; defaults: number };
 
 export type RuleResult = {
   approved: boolean;
@@ -19,7 +20,10 @@ export type RuleResult = {
 export function evaluate(criteria: ProgramCriteria, report: Assessment, age: number): RuleResult {
   const reasons: string[] = [];
   if (report.score < criteria.minScore) reasons.push(`Score below ${criteria.minScore}`);
-  if (report.dtiPct > criteria.maxDtiPct) reasons.push(`DTI above ${criteria.maxDtiPct}%`);
+  if (criteria.maxDtiPct !== null) {
+    if (report.dtiPct === null) reasons.push("Income not given");
+    else if (report.dtiPct > criteria.maxDtiPct) reasons.push(`DTI above ${criteria.maxDtiPct}%`);
+  }
   if (report.defaults > criteria.maxDefaults) {
     reasons.push(`${report.defaults} default(s), max ${criteria.maxDefaults}`);
   }

@@ -4,7 +4,7 @@ import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { programAvailability, runEligibilityCheck } from "@/lib/eligibility";
 import { rateLimit } from "@/lib/rate-limit";
-import { applicantSchema } from "@/lib/validation";
+import { applicantSchemaFor } from "@/lib/validation";
 
 export type CheckState =
   | { kind: "idle" }
@@ -24,9 +24,14 @@ export async function checkEligibility(slug: string, _prev: CheckState, formData
     monthlyIncome: String(formData.get("monthlyIncome") ?? ""),
   };
 
+  const program = await db.program.findUnique({ where: { slug }, include: { organization: { select: { active: true } } } });
+  if (!program || !program.active || !program.organization.active) {
+    return { kind: "unavailable", message: "This eligibility link is no longer active." };
+  }
+
   const errors: Record<string, string> = {};
   if (formData.get("consent") !== "on") errors.consent = "Please give consent to fetch your credit report";
-  const parsed = applicantSchema.safeParse(values);
+  const parsed = applicantSchemaFor(program).safeParse(values);
   if (!parsed.success) {
     for (const issue of parsed.error.issues) errors[String(issue.path[0])] ??= issue.message;
   }
@@ -38,10 +43,6 @@ export async function checkEligibility(slug: string, _prev: CheckState, formData
     return { kind: "unavailable", message: "Too many attempts. Please wait a minute and try again." };
   }
 
-  const program = await db.program.findUnique({ where: { slug }, include: { organization: { select: { active: true } } } });
-  if (!program || !program.active || !program.organization.active) {
-    return { kind: "unavailable", message: "This eligibility link is no longer active." };
-  }
   if (!(await programAvailability(program)).ok) {
     return { kind: "unavailable", message: "Eligibility checks for this offer aren't available yet. Please try again later." };
   }

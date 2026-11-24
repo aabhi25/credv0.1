@@ -87,7 +87,7 @@ export default async function ProgramPage({ params }: { params: Promise<{ id: st
         <Card>
           <CardHeader title="Bulk check" subtitle="Upload a CSV of applicants" />
           <div className="p-4">
-            <BulkUpload programId={program.id} blockedReason={blockedReason} />
+            <BulkUpload programId={program.id} blockedReason={blockedReason} askIncome={program.maxDtiPct !== null} />
           </div>
         </Card>
       </div>
