@@ -82,9 +82,14 @@ async function main() {
   ];
 
   const { Authorization: _a, ...noToken } = clear;
+  const sibling = (name: string) => creds.endpointUrl.replace(/[^/]+$/, name);
   tests.push(
     ["5. Made-up token", () => plainPost(creds.endpointUrl, { ...clear, Authorization: "Bearer not-a-real-token-000000000" }, "{}")],
     ["6. No token", () => plainPost(creds.endpointUrl, noToken, "{}")],
+    // The product's other documented endpoints (UAT and production only), with harmless content.
+    ["7. Report, accepting any reply type", () => plainPost(creds.endpointUrl, { ...clear, Accept: "*/*" }, JSON.stringify(full))],
+    ["8. Encryption endpoint", () => plainPost(sibling("payloadencryptdecrypt"), { ...clear, "Content-Type": "text/plain", Accept: "*/*" }, "credcap connection test")],
+    ["9. PDF endpoint, empty request", () => plainPost(sibling("cir360PDF"), { ...clear, Accept: "*/*" }, "{}")],
   );
 
   const blocked: (boolean | null)[] = [];
@@ -106,6 +111,7 @@ async function main() {
 
   const [now, plain, noLogin, empty] = blocked;
   const [real, fake, none] = [statuses[3], statuses[4], statuses[5]];
+  const [anyType, encrypt, pdf] = blocked.slice(6);
   console.log(
     "\nToken: " +
       (fake === 401 && none === 401 && real !== 401
@@ -115,8 +121,20 @@ async function main() {
           : "unclear: Equifax didn't answer 401 to a made-up or missing token."),
   );
   console.log(
+    "Other endpoints: " +
+      ([anyType, encrypt, pdf].includes(null)
+        ? "unclear, because a test failed to complete."
+        : now && !anyType
+          ? "the reply type CredCap asks for matters. Fixable in CredCap."
+          : encrypt && pdf
+            ? "blocked as well, so it's everything behind the gateway for this app or server, not just the report."
+            : !encrypt && !pdf
+              ? "not blocked, so only the report endpoint is."
+              : `mixed (encryption ${encrypt ? "blocked" : "not blocked"}, PDF ${pdf ? "blocked" : "not blocked"}).`),
+  );
+  console.log(
     "Likely: " +
-      (blocked.includes(null)
+      (blocked.slice(0, 4).includes(null)
         ? "unclear, because a test failed to complete."
         : !now
         ? "no firewall block this time; see each result above."
