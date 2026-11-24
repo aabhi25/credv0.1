@@ -595,11 +595,24 @@ async function getAccessToken(creds: EquifaxCredentials, timeoutMs: number, forc
   return token;
 }
 
+/**
+ * Headers for the report API. Accept must be any type (*), as in Equifax's spec: UAT answers
+ * "application/json" with HTTP 418 and a "That action is not allowed" page.
+ */
+export function reportHeaders(token: string) {
+  return {
+    "Content-Type": "application/json",
+    Accept: "*/*",
+    "User-Agent": "CredCap/1.0",
+    Authorization: `Bearer ${token}`,
+  };
+}
+
 /** Posts a JSON request to the report API with a Bearer token. */
 async function postReport(creds: EquifaxCredentials, body: unknown, timeoutMs: number): Promise<unknown> {
   const call = async (forceNewToken: boolean) => {
     const token = await getAccessToken(creds, TOKEN_TIMEOUT_MS, forceNewToken);
-    const headers = { "Content-Type": "application/json", Accept: "application/json", Authorization: `Bearer ${token}` };
+    const headers = reportHeaders(token);
     try {
       return await send(creds.endpointUrl, { method: "POST", headers, body: JSON.stringify(body) }, timeoutMs);
     } catch (err) {

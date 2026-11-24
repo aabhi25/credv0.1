@@ -10,6 +10,7 @@ import {
   describeHttpError,
   describeNetworkError,
   parseEquifaxResponse,
+  reportHeaders,
   unwrapBureauError,
 } from "./equifax";
 import { BureauError, type BureauRequest } from "./types";
@@ -309,6 +310,12 @@ describe("OAuth", () => {
     assert.equal(req.headers.Authorization, `Basic ${Buffer.from("my-client:s3cret").toString("base64")}`);
     assert.equal(req.headers["Content-Type"], "application/x-www-form-urlencoded");
     assert.equal(new URLSearchParams(req.body).get("grant_type"), "client_credentials");
+  });
+
+  it("accepts any reply type, which Equifax's UAT requires", () => {
+    const headers = reportHeaders("tok");
+    assert.equal(headers.Accept, "*/*");
+    assert.equal(headers.Authorization, "Bearer tok");
   });
 
   it("asks for the CIR 360 scope unless another is configured", () => {

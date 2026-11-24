@@ -4,10 +4,9 @@
 import https from "node:https";
 import http from "node:http";
 import { db } from "../src/lib/db";
-import { buildEquifaxProbeRequest, buildTokenRequest, DEFAULT_SCOPE, describeHttpError, type EquifaxCredentials } from "../src/lib/bureaus/equifax";
+import { buildEquifaxProbeRequest, buildTokenRequest, classifyProbeResponse, DEFAULT_SCOPE, describeHttpError, reportHeaders, type EquifaxCredentials } from "../src/lib/bureaus/equifax";
 import { loadBureauCredentials } from "../src/lib/org-bureaus";
 
-const USER_AGENT = "CredCap/1.0";
 type Reply = { status: number; text: string; remote?: string; trace?: string };
 
 /** Equifax's own ID for a request, which its engineers can look up. */
@@ -69,28 +68,23 @@ async function main() {
       `asked for ${creds.scope || DEFAULT_SCOPE}, clean text: ${/^[\x21-\x7e]+$/.test(token) ? "yes" : "NO"}`,
   );
 
-  const auth = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" };
-  const clear = { ...auth, "User-Agent": USER_AGENT };
+  const headers = reportHeaders(token);
+  const { Authorization: _a, ...noToken } = headers;
   const full = buildEquifaxProbeRequest(creds);
   // Never sends a made-up password: repeated wrong logins could lock the account.
   const { Password: _p, SecurityCode: _s, ...noSecrets } = full.RequestHeader;
-  const tests: [string, () => Promise<Reply>][] = [
-    ["1. As CredCap sends it now", () => fetchPost(creds.endpointUrl, auth, JSON.stringify(full))],
-    ["2. Same, with plain headers", () => plainPost(creds.endpointUrl, clear, JSON.stringify(full))],
-    ["3. Plain headers, no password or security code", () => plainPost(creds.endpointUrl, clear, JSON.stringify({ ...full, RequestHeader: noSecrets }))],
-    ["4. Plain headers, empty request", () => plainPost(creds.endpointUrl, clear, "{}")],
-  ];
-
-  const { Authorization: _a, ...noToken } = clear;
   const sibling = (name: string) => creds.endpointUrl.replace(/[^/]+$/, name);
-  tests.push(
-    ["5. Made-up token", () => plainPost(creds.endpointUrl, { ...clear, Authorization: "Bearer not-a-real-token-000000000" }, "{}")],
-    ["6. No token", () => plainPost(creds.endpointUrl, noToken, "{}")],
-    // The product's other documented endpoints (UAT and production only), with harmless content.
-    ["7. Report, accepting any reply type", () => plainPost(creds.endpointUrl, { ...clear, Accept: "*/*" }, JSON.stringify(full))],
-    ["8. Encryption endpoint", () => plainPost(sibling("payloadencryptdecrypt"), { ...clear, "Content-Type": "text/plain", Accept: "*/*" }, "credcap connection test")],
-    ["9. PDF endpoint, empty request", () => plainPost(sibling("cir360PDF"), { ...clear, Accept: "*/*" }, "{}")],
-  );
+  const tests: [string, () => Promise<Reply>][] = [
+    ["1. As CredCap sends it", () => fetchPost(creds.endpointUrl, headers, JSON.stringify(full))],
+    ["2. Same, without the headers Node adds", () => plainPost(creds.endpointUrl, headers, JSON.stringify(full))],
+    ["3. No password or security code", () => plainPost(creds.endpointUrl, headers, JSON.stringify({ ...full, RequestHeader: noSecrets }))],
+    ["4. Empty request", () => plainPost(creds.endpointUrl, headers, "{}")],
+    ["5. Asking for JSON only", () => plainPost(creds.endpointUrl, { ...headers, Accept: "application/json" }, JSON.stringify(full))],
+    ["6. Made-up token", () => plainPost(creds.endpointUrl, { ...headers, Authorization: "Bearer not-a-real-token-000000000" }, "{}")],
+    ["7. No token", () => plainPost(creds.endpointUrl, noToken, "{}")],
+    // The product's other documented endpoint (UAT and production only), with harmless content.
+    ["8. PDF endpoint, empty request", () => plainPost(sibling("cir360PDF"), headers, "{}")],
+  ];
 
   const blocked: (boolean | null)[] = [];
   const statuses: number[] = [];
@@ -99,7 +93,9 @@ async function main() {
       const r = await run();
       statuses.push(r.status);
       blocked.push(/not allowed|<!doctype|<html/i.test(r.text));
-      const summary = r.status === 200 ? "Equifax replied normally (HTTP 200)" : describeHttpError(r.status, parse(r.text));
+      const json = parse(r.text);
+      const summary =
+        r.status === 200 ? `HTTP 200. ${label.startsWith("8") ? "" : classifyProbeResponse(json).message}` : describeHttpError(r.status, json);
       console.log(`${label}: ${summary}${r.remote ? ` [${r.remote}]` : ""}${r.trace ? `\n   efx-transaction-id ${r.trace}` : ""}`);
     } catch (err) {
       blocked.push(null);
@@ -109,42 +105,29 @@ async function main() {
     await new Promise((resolve) => setTimeout(resolve, 1500));
   }
 
-  const [now, plain, noLogin, empty] = blocked;
-  const [real, fake, none] = [statuses[3], statuses[4], statuses[5]];
-  const [anyType, encrypt, pdf] = blocked.slice(6);
+  const [now, plain, noLogin, empty, jsonOnly, , , pdf] = blocked;
+  const [, , , , , fake, none] = statuses;
   console.log(
     "\nToken: " +
-      (fake === 401 && none === 401 && real !== 401
-        ? "accepted. Equifax refuses a made-up or missing token (401), but not this one."
-        : real === 401
-          ? "refused by the report API."
+      (statuses[0] === 401
+        ? "refused by the report API."
+        : fake === 401 && none === 401
+          ? "accepted. Equifax refuses a made-up or missing token (401), but not this one."
           : "unclear: Equifax didn't answer 401 to a made-up or missing token."),
   );
   console.log(
-    "Other endpoints: " +
-      ([anyType, encrypt, pdf].includes(null)
-        ? "unclear, because a test failed to complete."
-        : now && !anyType
-          ? "the reply type CredCap asks for matters. Fixable in CredCap."
-          : encrypt && pdf
-            ? "blocked as well, so it's everything behind the gateway for this app or server, not just the report."
-            : !encrypt && !pdf
-              ? "not blocked, so only the report endpoint is."
-              : `mixed (encryption ${encrypt ? "blocked" : "not blocked"}, PDF ${pdf ? "blocked" : "not blocked"}).`),
-  );
-  console.log(
-    "Likely: " +
-      (blocked.slice(0, 4).includes(null)
+    "Result: " +
+      (blocked.slice(0, 5).includes(null)
         ? "unclear, because a test failed to complete."
         : !now
-        ? "no firewall block this time; see each result above."
-        : !plain
-          ? "the headers CredCap sends. Fixable in CredCap."
-          : !noLogin
-            ? "the password or security code text trips the firewall."
-            : !empty
-              ? "something else in the request body."
-              : "not the request. Even an empty one is blocked: IP allow-listing, app access, or Equifax's own setup."),
+          ? `CredCap's request isn't blocked.${jsonOnly ? " Asking for JSON only still is." : ""}`
+          : !plain
+            ? "blocked because of headers Node adds. Fixable in CredCap."
+            : !noLogin
+              ? "blocked, but not without the password and security code."
+              : !empty
+                ? "blocked because of something in the request body."
+                : `blocked whatever was tried here${pdf === false ? ", except on the PDF endpoint" : ""}. This doesn't prove whose side it's on.`),
   );
 }
 
