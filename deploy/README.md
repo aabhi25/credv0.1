@@ -26,6 +26,7 @@ HTTPS. Keep a safe copy of `CREDENTIALS_KEY` from `/opt/credcap/.env`: saved bur
 | Status | `systemctl status credcap caddy` |
 | Logs | `sudo journalctl -u credcap -n 100` |
 | Back up now | `sudo systemctl start credcap-backup` |
+| Diagnose Equifax sandbox/UAT blocks | `cd /opt/credcap && sudo -u credcap env HOME=/home/credcap npx tsx --env-file=.env scripts/diagnose-equifax.ts "Organization name"` |
 
 Backups are daily at 02:30 server time, kept 14 days in `/var/backups/credcap`. They stay on the same server, so also
 turn on Lightsail automatic snapshots.
