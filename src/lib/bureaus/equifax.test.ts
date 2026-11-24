@@ -161,6 +161,33 @@ describe("connection test", () => {
     assert.equal(result.ok, true);
     assert.equal(result.code, "E0048");
   });
+
+  it("says so when Equifax sends its documentation sample", () => {
+    const sample = { InquiryResponseHeader: { ClientID: "string", SuccessCode: "string" }, InquiryRequestInfo: { FirstName: "string" } };
+    assert.match(classifyProbeResponse(sample).message, /documentation sample/);
+    assert.throws(() => parseEquifaxResponse(sample), (err: unknown) => err instanceof BureauError && err.code === "PLACEHOLDER");
+  });
+
+  it("doesn't pass a reply it can't recognise", () => {
+    for (const body of [{}, { status: "FAILED", message: "x" }, { InquiryResponseHeader: { SuccessCode: 0 } }]) {
+      assert.equal(classifyProbeResponse(body).ok, false);
+    }
+    assert.equal(classifyProbeResponse({ efxErrorCode: "400.01", description: "Invalid" }).code, "400.01");
+  });
+
+  it("describes an unrecognised reply without applicant values", () => {
+    const body = {
+      InquiryResponseHeader: { SuccessCode: "1", CustRefField: "ref-1" },
+      InquiryRequestInfo: { FirstName: "Asha", IDDetails: [{ IDValue: "ABCDE1234F" }] },
+    };
+    assert.throws(
+      () => parseEquifaxResponse(body),
+      (err: unknown) =>
+        err instanceof BureauError &&
+        /InquiryResponseHeader, InquiryRequestInfo; SuccessCode 1/.test(err.message) &&
+        !/Asha|ABCDE1234F|ref-1/.test(err.message),
+    );
+  });
 });
 
 describe("describeNetworkError", () => {

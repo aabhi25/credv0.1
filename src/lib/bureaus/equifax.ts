@@ -137,6 +137,38 @@ function firstError(...sources: unknown[]) {
   return null;
 }
 
+function responseError(root: Json) {
+  const ccr = obj(root.CCRResponse);
+  return firstError(
+    root.efxErrorCode || root.ErrorCode ? root : null,
+    root.Error,
+    obj(root.ReportData).Error,
+    ccr.Error,
+    ...arr(ccr.CIRReportDataLst).map((r) => r.Error),
+  );
+}
+
+/** Equifax's documentation sample fills every field with the word "string". */
+function isPlaceholder(root: Json) {
+  return Object.values(obj(root.InquiryResponseHeader)).some((v) => v === "string");
+}
+
+const PLACEHOLDER_MESSAGE =
+  "Equifax replied with its documentation sample (every value is the word \"string\"), not a credit report.";
+
+/** What a reply contains, for diagnosing: field names and status codes only, never applicant values. */
+function describeLayout(body: unknown): string {
+  const root = obj(body);
+  const keys = (v: unknown) =>
+    Object.keys(obj(v)).filter((k) => /^[A-Za-z]\w{0,39}$/.test(k)).slice(0, 20).join(", ") || "nothing";
+  const header = obj(root.InquiryResponseHeader);
+  const parts = [`fields: ${keys(root)}`];
+  for (const k of ["ReportData", "CCRResponse"]) if (k in root) parts.push(`${k}: ${keys(root[k])}`);
+  const codes = { SuccessCode: header.SuccessCode, HitCode: header.HitCode, status: root.status };
+  for (const [k, v] of Object.entries(codes)) if (/^\w{1,15}$/.test(str(v))) parts.push(`${k} ${str(v)}`);
+  return parts.join("; ");
+}
+
 function isSevereAccount(account: Json) {
   if ((num(account.WriteOffAmount) ?? 0) > 0) return true;
   if (SEVERE_TEXT.test(str(account.AccountStatus)) || SEVERE_TEXT.test(str(account.AssetClassification))) return true;
@@ -193,19 +225,15 @@ export function parseEquifaxResponse(body: unknown): BureauReport {
   const header = obj(root.InquiryResponseHeader);
   const ccr = obj(root.CCRResponse);
 
-  const error = firstError(
-    root.Error,
-    obj(root.ReportData).Error,
-    ccr.Error,
-    ...arr(ccr.CIRReportDataLst).map((r) => r.Error),
-  );
+  const error = responseError(root);
   if (error || str(header.SuccessCode) === "0" || str(ccr.Status) === "0") {
     const code = error?.code || "UNKNOWN";
     throw new BureauError(`Equifax error ${code}${error?.msg ? `: ${error.msg}` : ""}`, code);
   }
 
+  if (isPlaceholder(root)) throw new BureauError(PLACEHOLDER_MESSAGE, "PLACEHOLDER");
   const parts = cir360Parts(root) ?? idccrParts(root);
-  if (!parts) throw new BureauError("Equifax response had no report");
+  if (!parts) throw new BureauError(`Equifax's reply had no credit report (${describeLayout(root)})`, "NO_REPORT");
   const hitCode = str(parts.header.HitCode) || str(header.HitCode);
 
   const scores = arr(parts.data.ScoreDetails);
@@ -254,14 +282,25 @@ export function buildEquifaxProbeRequest(creds: HeaderCredentials) {
 
 export function classifyProbeResponse(body: unknown): ProbeResult {
   const root = obj(body);
-  const ccr = obj(root.CCRResponse);
-  const error = firstError(
-    root.Error,
-    obj(root.ReportData).Error,
-    ccr.Error,
-    ...arr(ccr.CIRReportDataLst).map((r) => r.Error),
-  );
-  if (!error) return { ok: true, message: "Connected, and Equifax accepted the request." };
+  const error = responseError(root);
+  if (!error) {
+    if (isPlaceholder(root)) {
+      return {
+        ok: true,
+        code: "PLACEHOLDER",
+        message: `${PLACEHOLDER_MESSAGE} The connection works, but this doesn't check the member login or reports.`,
+      };
+    }
+    const failed = [obj(root.InquiryResponseHeader).SuccessCode, obj(root.CCRResponse).Status].some((v) => str(v) === "0");
+    if (failed || !(cir360Parts(root) ?? idccrParts(root))) {
+      return {
+        ok: false,
+        code: "NO_REPORT",
+        message: `Equifax replied, but not with a report or an error CredCap recognises (${describeLayout(root)}).`,
+      };
+    }
+    return { ok: true, message: "Connected, and Equifax returned a report." };
+  }
   const detail = `${error.code}${error.msg ? `: ${error.msg}` : ""}`;
   if (error.code === "E0008") {
     return { ok: false, code: error.code, message: `Equifax rejected this server's IP address (${detail}). Ask Equifax to allow-list it.` };
@@ -436,7 +475,7 @@ async function postReport(creds: EquifaxCredentials, body: unknown, timeoutMs: n
   const json = await readJson(res);
   if (res.status === 504 || res.status === 503) {
     throw new BureauError(
-      `Signed in to Equifax, but its report service didn't respond (HTTP ${res.status}${gatewayDetail(json)}). This is on Equifax's side: ask them to check the report service for your app.`,
+      `Signed in to Equifax, but its report service didn't respond (HTTP ${res.status}${gatewayDetail(json)}). Ask Equifax to check the report service for your app, and whether this server's IP address needs allow-listing.`,
       `HTTP_${res.status}`,
     );
   }
