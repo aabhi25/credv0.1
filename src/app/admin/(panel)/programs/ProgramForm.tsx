@@ -31,7 +31,7 @@ const DEFAULTS: Values = {
   category: "",
   description: "",
   bureau: "EQUIFAX",
-  inquiryPurpose: "05",
+  inquiryPurpose: "06",
   minScore: 650,
   maxDtiPct: 40,
   maxDefaults: 0,

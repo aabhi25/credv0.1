@@ -165,7 +165,9 @@ function Result({ state }: { state: Extract<CheckState, { kind: "result" }> }) {
       </h2>
       <p className="mx-auto mt-2 max-w-sm text-sm text-slate-500">
         {state.status === "ERROR"
-          ? "We couldn't fetch your credit report just now. Please try again in a little while."
+          ? state.mismatch
+            ? "Some of your details don't match the credit bureau's records. Please check your name, PAN, date of birth and mobile number, and try again."
+            : "We couldn't fetch your credit report just now. Please try again in a little while."
           : "You are not pre-approved for this offer right now. You can check again later."}
       </p>
       {again}

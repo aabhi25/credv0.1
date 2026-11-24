@@ -48,8 +48,9 @@ describe("buildEquifaxRequest", () => {
     assert.equal(body.RequestHeader.MemberNumber, "MEMBER0001");
     assert.deepEqual(body.RequestHeader.ProductCode, ["IDCCR"]);
     assert.equal(body.RequestBody.InquiryPurpose, "05");
-    assert.equal(body.RequestBody.FirstName, "Asha Verma");
-    assert.equal(body.RequestBody.DOB, "14-05-1990");
+    assert.equal(body.RequestBody.FirstName, "Asha");
+    assert.equal(body.RequestBody.LastName, "Verma");
+    assert.equal(body.RequestBody.DOB, "1990-05-14");
     assert.deepEqual(body.RequestBody.InquiryAddresses[0], {
       seq: "1",
       AddressType: ["H"],
@@ -63,9 +64,11 @@ describe("buildEquifaxRequest", () => {
     assert.deepEqual(body.Score, [{ Type: "ERS", Version: "4.0" }]);
   });
 
-  it("strips characters Equifax rejects and splits names longer than 40 characters", () => {
+  it("strips characters Equifax rejects and splits names", () => {
     const body = buildEquifaxRequest(creds, { ...request, name: "Venkata Subramanya Lakshmi Narasimha Rao Chowdary (Jr)" });
     assert.equal(body.RequestBody.FirstName, "Venkata");
+    assert.ok(body.RequestBody.MiddleName.length <= 40);
+    assert.equal(buildEquifaxRequest(creds, { ...request, name: "Asha" }).RequestBody.LastName, "");
     assert.ok(body.RequestBody.LastName.length <= 40);
     assert.match(body.RequestBody.LastName, /^[a-zA-Z '\-./]+$/);
   });
@@ -123,6 +126,62 @@ describe("parseEquifaxResponse", () => {
     assert.equal(result.score, null);
   });
 
+  describe("with a microfinance report", () => {
+    const retail = {
+      InquiryResponseHeader: { ProductCode: ["ICCRR"], HitCode: "10" },
+      CIRReportData: {
+        RetailAccountsSummary: { NoOfWriteOffs: "0", TotalMonthlyPaymentAmount: "5000" },
+        ScoreDetails: [{ Type: "ERS", Value: "710" }],
+      },
+    };
+    const micro = {
+      InquiryResponseHeader: { ProductCode: ["ICCRM"], HitCode: "10" },
+      CIRReportData: {
+        MicrofinanceAccountsSummary: { TotalMonthlyPaymentAmount: "2150" },
+        ScoreDetails: [{ Type: "MRS", Value: "535" }],
+      },
+    };
+    const reply = (...list: unknown[]) => ({
+      InquiryResponseHeader: { ReportOrderNO: "1", SuccessCode: "1" },
+      CCRResponse: { Status: "1", CIRReportDataLst: list },
+    });
+
+    it("reads only the retail report, whichever comes first", () => {
+      const expected = { hit: true, score: 710, existingEmi: 5000, defaults: 0, bureauRef: "1" };
+      assert.deepEqual(parseEquifaxResponse(reply(retail, micro)), expected);
+      assert.deepEqual(parseEquifaxResponse(reply(micro, retail)), expected);
+    });
+
+    it("never uses the microfinance score", () => {
+      assert.deepEqual(parseEquifaxResponse(reply(micro)), { hit: false, score: null, existingEmi: 0, defaults: 0, bureauRef: "1" });
+      const noScore = { ...retail, CIRReportData: { ...retail.CIRReportData, ScoreDetails: [{ Type: "MRS", Value: "535" }] } };
+      assert.equal(parseEquifaxResponse(reply(noScore)).score, null);
+    });
+
+    it("ignores an error in the microfinance report when there is a retail one", () => {
+      const failed = { InquiryResponseHeader: { ProductCode: ["ICCRM"] }, Error: [{ ErrorCode: "E0708", ErrorMsg: "Family Details are mandatory" }] };
+      assert.equal(parseEquifaxResponse(reply(failed, retail)).score, 710);
+      assert.throws(() => parseEquifaxResponse(reply(failed)), /E0708/);
+    });
+  });
+
+  it("treats a missing consumer record as no credit file", () => {
+    const body = { InquiryResponseHeader: { SuccessCode: "0" }, Error: [{ ErrorCode: "E0011", ErrorMsg: "Consumer record not found" }] };
+    assert.equal(parseEquifaxResponse(body).hit, false);
+  });
+
+  it("reports identity mismatches without keeping the bureau's contact details", () => {
+    const error = (ErrorCode: string, ErrorMsg: string) => ({ InquiryResponseHeader: { SuccessCode: "0" }, Error: [{ ErrorCode, ErrorMsg }] });
+    assert.throws(
+      () => parseEquifaxResponse(error("GSWDOE116", "Inquiry parameters:Phone does not match with credit file~Phones:|XXXXX23107")),
+      (err: unknown) => err instanceof BureauError && err.code === "IDENTITY_MISMATCH" && !/23107/.test(err.message),
+    );
+    assert.throws(
+      () => parseEquifaxResponse(error("E9999", "Failed~Emails:|XX@EXAMPLE.COM")),
+      (err: unknown) => err instanceof BureauError && !/EXAMPLE/.test(err.message),
+    );
+  });
+
   it("throws a BureauError carrying Equifax's error code", () => {
     assert.throws(
       () =>
@@ -160,6 +219,12 @@ describe("connection test", () => {
     const result = classifyProbeResponse(fail("E0048", "Address information not present."));
     assert.equal(result.ok, true);
     assert.equal(result.code, "E0048");
+  });
+
+  it("fails on login, service and unknown errors", () => {
+    for (const code of ["E0020", "E0077", "E0088", "E0090", "E0103", "E0104", "GSWDOE101", "GSWDOE102", "GSWDOE999", "E0401", "EX99", "E7777"]) {
+      assert.equal(classifyProbeResponse(fail(code, "x")).ok, false, code);
+    }
   });
 
   it("says so when Equifax sends its documentation sample", () => {

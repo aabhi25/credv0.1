@@ -9,7 +9,7 @@ import { applicantSchema } from "@/lib/validation";
 export type CheckState =
   | { kind: "idle" }
   | { kind: "invalid"; errors: Record<string, string>; values: Record<string, string> }
-  | { kind: "result"; status: "APPROVED" | "DECLINED" | "ERROR"; approvedLimit: number; name: string }
+  | { kind: "result"; status: "APPROVED" | "DECLINED" | "ERROR"; approvedLimit: number; name: string; mismatch?: boolean }
   | { kind: "unavailable"; message: string };
 
 export async function checkEligibility(slug: string, _prev: CheckState, formData: FormData): Promise<CheckState> {
@@ -47,5 +47,5 @@ export async function checkEligibility(slug: string, _prev: CheckState, formData
   }
 
   const outcome = await runEligibilityCheck(program, parsed.data, "LINK");
-  return { kind: "result", status: outcome.status, approvedLimit: outcome.approvedLimit, name: parsed.data.name };
+  return { kind: "result", status: outcome.status, approvedLimit: outcome.approvedLimit, name: parsed.data.name, mismatch: outcome.mismatch };
 }

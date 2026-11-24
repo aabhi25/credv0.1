@@ -62,17 +62,17 @@ function cleanName(name: string) {
   return name.replace(/[^a-zA-Z '\-./]/g, " ").replace(/\s+/g, " ").trim();
 }
 
+/** First, middle and last names. The CIR 360 API requires LastName, so it's only empty for a single-word name. */
 function splitName(name: string) {
-  const clean = cleanName(name);
-  if (clean.length <= 40) return { FirstName: clean, MiddleName: "", LastName: "" };
-  const [first, ...rest] = clean.split(" ");
-  return { FirstName: first.slice(0, 40), MiddleName: "", LastName: rest.join(" ").slice(0, 40) };
+  const words = cleanName(name).split(" ");
+  const first = words.shift() ?? "";
+  const last = words.pop() ?? "";
+  return { FirstName: first.slice(0, 40), MiddleName: words.join(" ").slice(0, 40).trim(), LastName: last.slice(0, 40) };
 }
 
-/** DD-MM-YYYY, as in the CIR 360 API spec (e.g. 31-12-1994). */
-function dmy(d: Date) {
-  const [y, m, day] = d.toISOString().slice(0, 10).split("-");
-  return `${day}-${m}-${y}`;
+/** YYYY-MM-DD: the IDCCR spec requires it (error E0059 otherwise). The CIR 360 spec only shows an example, 31-12-1994. */
+function ymd(d: Date) {
+  return d.toISOString().slice(0, 10);
 }
 
 /** The member login for the request header. ProductVersion is only sent if Equifax issued one. */
@@ -95,7 +95,7 @@ export function buildEquifaxRequest(creds: HeaderCredentials, req: BureauRequest
     RequestBody: {
       InquiryPurpose: req.inquiryPurpose,
       ...splitName(req.name),
-      DOB: dmy(req.dob),
+      DOB: ymd(req.dob),
       InquiryAddresses: [
         {
           seq: "1",
@@ -137,15 +137,57 @@ function firstError(...sources: unknown[]) {
   return null;
 }
 
+/**
+ * A consolidated reply can hold a retail and a microfinance report (product codes ICCRR and ICCRM).
+ * CredCap assesses retail credit only, so it never reads microfinance data.
+ */
+function isMicrofinance(report: Json) {
+  const codes = [obj(report.InquiryResponseHeader).ProductCode].flat().map(str);
+  const data = obj(report.CIRReportData);
+  return (
+    codes.includes("ICCRM") ||
+    Object.keys(data).some((k) => k.startsWith("Microfinance")) ||
+    arr(data.ScoreDetails).some((s) => ["MRS", "MCS"].includes(str(s.Type)))
+  );
+}
+
+function reports(root: Json) {
+  return arr(obj(root.CCRResponse).CIRReportDataLst);
+}
+
+function retailReport(root: Json): Json | null {
+  const isRetail = (r: Json) => {
+    const data = obj(r.CIRReportData);
+    return data.RetailAccountsSummary || data.RetailAccountDetails || arr(data.ScoreDetails).some((s) => str(s.Type) === "ERS");
+  };
+  const all = reports(root);
+  return all.find(isRetail) ?? all.find((r) => !isMicrofinance(r)) ?? null;
+}
+
 function responseError(root: Json) {
-  const ccr = obj(root.CCRResponse);
+  const retail = retailReport(root);
   return firstError(
     root.efxErrorCode || root.ErrorCode ? root : null,
     root.Error,
     obj(root.ReportData).Error,
-    ccr.Error,
-    ...arr(ccr.CIRReportDataLst).map((r) => r.Error),
+    obj(root.CCRResponse).Error,
+    // An error in the microfinance report doesn't matter when there is a retail one.
+    ...(retail ? [retail] : reports(root)).map((r) => r.Error),
   );
+}
+
+// "Consumer record not found": no credit file, not a failure.
+const NO_RECORD = "E0011";
+
+/** Equifax refuses the report when a phone, ID or name differs from its records. */
+function isMismatch(error: { code: string; msg: string }) {
+  return /does not match|unable to verify input pii/i.test(error.msg);
+}
+
+/** Equifax can append the consumer's masked phones and emails after "~"; never keep those. */
+function errorDetail(error: { code: string; msg: string }) {
+  const msg = error.msg.split("~")[0].trim();
+  return [error.code, msg].filter(Boolean).join(": ");
 }
 
 /** Equifax's documentation sample fills every field with the word "string". */
@@ -154,7 +196,7 @@ function isPlaceholder(root: Json) {
 }
 
 const PLACEHOLDER_MESSAGE =
-  "Equifax replied with its documentation sample (every value is the word \"string\"), not a credit report.";
+  "Equifax replied with its documentation sample (placeholder values), not a credit report.";
 
 /** What a reply contains, for diagnosing: field names and status codes only, never applicant values. */
 function describeLayout(body: unknown): string {
@@ -187,26 +229,20 @@ type ReportParts = { data: Json; header: Json; summary: Json; accounts: Json[]; 
 function cir360Parts(root: Json): ReportParts | null {
   if (!root.ReportData) return null;
   const data = obj(root.ReportData);
-  const consolidated = obj(obj(data.AccountsSummary).ConsolidateCreditSummary);
-  const retail = obj(consolidated.Retail);
+  const retail = obj(obj(obj(data.AccountsSummary).ConsolidateCreditSummary).Retail);
   return {
     data,
     header: obj(root.InquiryResponseHeader),
     summary: retail,
     accounts: arr(obj(data.Accounts).Retails),
-    emi: num(retail.InstallmentAmount) ?? num(obj(consolidated.OverAll).TotalInstallmentAmount),
+    emi: num(retail.InstallmentAmount),
     writeOffs: num(retail.NoOfWriteOffs),
   };
 }
 
 /** IDCCR shape: CCRResponse.CIRReportDataLst, one entry per report type; we want the retail one. */
 function idccrParts(root: Json): ReportParts | null {
-  const reports = arr(obj(root.CCRResponse).CIRReportDataLst);
-  const retail =
-    reports.find((r) => {
-      const data = obj(r.CIRReportData);
-      return data.RetailAccountsSummary || arr(data.ScoreDetails).some((s) => str(s.Type) === "ERS");
-    }) ?? reports[0];
+  const retail = retailReport(root);
   if (!retail) return null;
   const data = obj(retail.CIRReportData);
   const summary = obj(data.RetailAccountsSummary);
@@ -225,19 +261,24 @@ export function parseEquifaxResponse(body: unknown): BureauReport {
   const header = obj(root.InquiryResponseHeader);
   const ccr = obj(root.CCRResponse);
 
+  const noFile = { hit: false, score: null, existingEmi: 0, defaults: 0, bureauRef: str(header.ReportOrderNO) || null };
   const error = responseError(root);
+  if (error?.code === NO_RECORD) return noFile;
+  if (error && isMismatch(error)) {
+    throw new BureauError("The applicant's details don't match Equifax's records", "IDENTITY_MISMATCH");
+  }
   if (error || str(header.SuccessCode) === "0" || str(ccr.Status) === "0") {
-    const code = error?.code || "UNKNOWN";
-    throw new BureauError(`Equifax error ${code}${error?.msg ? `: ${error.msg}` : ""}`, code);
+    throw new BureauError(`Equifax error ${error ? errorDetail(error) : "UNKNOWN"}`, error?.code || "UNKNOWN");
   }
 
   if (isPlaceholder(root)) throw new BureauError(PLACEHOLDER_MESSAGE, "PLACEHOLDER");
   const parts = cir360Parts(root) ?? idccrParts(root);
+  // Only a microfinance report: there's no retail credit to assess.
+  if (!parts && reports(root).some(isMicrofinance)) return noFile;
   if (!parts) throw new BureauError(`Equifax's reply had no credit report (${describeLayout(root)})`, "NO_REPORT");
   const hitCode = str(parts.header.HitCode) || str(header.HitCode);
 
-  const scores = arr(parts.data.ScoreDetails);
-  const scoreEntry = scores.find((s) => str(s.Type) === "ERS") ?? scores[0];
+  const scoreEntry = arr(parts.data.ScoreDetails).find((s) => str(s.Type) === "ERS");
   const rawScore = num(scoreEntry?.Value);
   const score = rawScore !== null && rawScore >= 300 && rawScore <= 900 ? rawScore : null;
 
@@ -257,12 +298,19 @@ export function parseEquifaxResponse(body: unknown): BureauReport {
   };
 }
 
-// Login / account problems (spec error list). Anything else on a blank enquiry means the login got through.
+// Login / account problems (spec error list).
 const AUTH_ERRORS = new Set([
-  "E0001", "E0002", "E0005", "E0007", "E0008", "E0010", "E0013", "E0019", "E0021", "E0022", "E0023",
-  "E0024", "E0025", "E0026", "E0027", "E0028", "E0074", "E0075", "E0076",
+  "E0001", "E0002", "E0005", "E0007", "E0008", "E0010", "E0013", "E0019", "E0020", "E0021", "E0022", "E0023",
+  "E0024", "E0025", "E0026", "E0027", "E0028", "E0034", "E0074", "E0075", "E0076", "E0077", "E0088", "E0089",
+  "E0090", "E0103", "E0104", "E0526", "E0951", "GSWDOE101", "GSWDOE102", "GSWDOE103", "GSWDOE104", "GSWDOE5304",
 ]);
-const UNAVAILABLE_ERRORS = new Set(["E0029", "E0030", "E0046"]);
+const UNAVAILABLE_ERRORS = new Set(["E0029", "E0030", "E0046", "E0601", "E0602", "E0603", "E0604", "GSWDOE999"]);
+// Missing applicant details: what a blank enquiry should be refused for once the login is accepted.
+const BLANK_ENQUIRY_ERRORS = new Set([
+  "E0032", "E0043", "E0044", "E0047", "E0048", "E0050", "E0051", "E0056", "E0057", "E0059", "E0068", "E0081", "E0086",
+  "E0095", "E0098", "E0101", "E0102", "E0431", "E0511", "E0701", "E0707", "E0708", "E0773", "E0800", "E0826", "E0841",
+  "E0909", "E0989", "E9867", "GSWDOE107", "GSWDOE108", "GSWDOE115",
+]);
 
 /** A deliberately blank enquiry: Equifax can check the login but has nothing to pull a report for. */
 export function buildEquifaxProbeRequest(creds: HeaderCredentials) {
@@ -301,13 +349,16 @@ export function classifyProbeResponse(body: unknown): ProbeResult {
     }
     return { ok: true, message: "Connected, and Equifax returned a report." };
   }
-  const detail = `${error.code}${error.msg ? `: ${error.msg}` : ""}`;
+  const detail = errorDetail(error);
   if (error.code === "E0008") {
     return { ok: false, code: error.code, message: `Equifax rejected this server's IP address (${detail}). Ask Equifax to allow-list it.` };
   }
   if (AUTH_ERRORS.has(error.code)) return { ok: false, code: error.code, message: `Equifax rejected the login (${detail}).` };
   if (UNAVAILABLE_ERRORS.has(error.code)) {
     return { ok: false, code: error.code, message: `Equifax is temporarily unavailable (${detail}). Try again later.` };
+  }
+  if (!BLANK_ENQUIRY_ERRORS.has(error.code)) {
+    return { ok: false, code: error.code, message: `Equifax replied with an error (${detail}), so the login isn't confirmed.` };
   }
   return {
     ok: true,
@@ -325,7 +376,7 @@ export function classifyGatewayError(err: BureauError): ProbeResult | null {
     return {
       ok: true,
       code: err.code,
-      message: `Connected. The API accepted the token and refused the blank test enquiry (${err.message}), as expected. No credit report was pulled. Run a test enquiry to fully confirm.`,
+      message: `Connected. The API accepted the token and refused the blank test enquiry (${err.message}). This doesn't check the member login. No credit report was pulled. Run a test enquiry to fully confirm.`,
     };
   }
   if (err.code === "HTTP_401" || err.code === "HTTP_403") {

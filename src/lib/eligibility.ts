@@ -32,6 +32,8 @@ export type CheckOutcome = {
   status: "APPROVED" | "DECLINED" | "ERROR";
   approvedLimit: number;
   reasons: string[];
+  /** The bureau couldn't match the applicant's details, so they can correct them and retry. */
+  mismatch?: boolean;
 };
 
 /** Pulls the bureau report, applies the program's rules and records the check. */
@@ -49,6 +51,7 @@ export async function runEligibilityCheck(
   let approvedLimit = 0;
   let report: BureauReport | null = null;
   let dtiPct: number | null = null;
+  let mismatch = false;
 
   try {
     const availability = await programAvailability(program);
@@ -70,7 +73,7 @@ export async function runEligibilityCheck(
     if (!report.hit || report.score === null) {
       // No credit file (or no score): there's nothing to assess against the rules.
       status = "DECLINED";
-      reasons = [report.hit ? "No credit score available" : "No credit history at the bureau"];
+      reasons = [report.hit ? "No credit score available" : "No retail credit history at the bureau"];
     } else {
       const result = evaluate(program, { score: report.score, dtiPct, defaults: report.defaults }, age);
       status = result.approved ? "APPROVED" : "DECLINED";
@@ -79,6 +82,7 @@ export async function runEligibilityCheck(
     }
   } catch (err) {
     status = "ERROR";
+    mismatch = err instanceof BureauError && err.code === "IDENTITY_MISMATCH";
     reasons = [err instanceof BureauError ? err.message : "Bureau request failed"];
     if (!(err instanceof BureauError)) console.error("Bureau request failed", err);
   }
@@ -106,7 +110,7 @@ export async function runEligibilityCheck(
     },
   });
 
-  return { id: check.id, status, approvedLimit, reasons };
+  return { id: check.id, status, approvedLimit, reasons, mismatch };
 }
 
 export function parseReasons(raw: string): string[] {
